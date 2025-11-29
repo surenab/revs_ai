@@ -490,6 +490,17 @@ npm run dev
 
 ## 🚀 Production Deployment
 
+> 📖 **For a complete step-by-step guide to deploy on DigitalOcean, see [DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+
+This section provides a quick overview. For detailed instructions including server setup, SSL configuration, and monitoring, refer to the [complete deployment guide](docs/DEPLOYMENT.md).
+
+### Quick Deployment
+
+```bash
+# Use the automated deployment script
+./scripts/deploy-production.sh
+```
+
 ### Step 1: Prepare Production Environment
 
 ```bash
