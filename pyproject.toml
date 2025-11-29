@@ -176,6 +176,7 @@ ignore = [
     "PLR0913", # Too many arguments to function call
     "PLR2004", # Magic value used in comparison
     "PLW2901", # `for` loop variable overwritten by assignment target
+    "PLC0415", # `import` should be at the top-level of a file (common with TYPE_CHECKING imports)
 
     # Ruff-specific rules
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
