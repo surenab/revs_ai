@@ -284,6 +284,7 @@ server {
     }
 }
 EOF
+fi
 
 # Enable site
 sudo ln -sf /etc/nginx/sites-available/stocks /etc/nginx/sites-enabled/
@@ -295,7 +296,20 @@ sudo nginx -t
 
 echo -e "${GREEN}✅ Nginx configuration created!${NC}"
 echo ""
-echo "Next steps:"
-echo "1. If you have a domain, set up SSL: sudo certbot --nginx -d ${DOMAIN}"
-echo "2. If no domain yet, the config will work but SSL will need to be set up later"
-echo "3. Reload Nginx: sudo systemctl reload nginx"
+if [ "$IS_IP" = true ]; then
+    echo "⚠️  IP address detected - HTTP-only configuration created."
+    echo "   SSL certificates are not available for IP addresses."
+    echo "   To enable HTTPS, you'll need to:"
+    echo "   1. Point a domain name to this IP address"
+    echo "   2. Update ALLOWED_HOSTS in .env.production"
+    echo "   3. Run: sudo certbot --nginx -d your-domain.com"
+    echo ""
+    echo "For now, the application will work over HTTP."
+else
+    echo "Next steps:"
+    echo "1. Set up SSL: sudo certbot --nginx -d ${DOMAIN}"
+    echo "   (This will automatically configure SSL certificates)"
+    echo "2. Or reload Nginx now for HTTP-only: sudo systemctl reload nginx"
+fi
+echo ""
+echo "Reload Nginx: sudo systemctl reload nginx"
