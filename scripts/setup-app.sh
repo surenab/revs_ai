@@ -21,7 +21,7 @@ echo -e "${YELLOW}📦 Setting up Python environment...${NC}"
 
 # Install uv if not in PATH
 if ! command -v uv &> /dev/null; then
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$PATH"
     if ! command -v uv &> /dev/null; then
         echo -e "${RED}Error: uv is not installed. Please run ./scripts/setup-server.sh first.${NC}"
         exit 1

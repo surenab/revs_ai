@@ -71,7 +71,7 @@ sudo apt install -y python3.13 python3.13-venv python3.13-dev
 
 echo -e "${YELLOW}📦 Installing uv (Python package manager)...${NC}"
 curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 echo -e "${YELLOW}🗄️  Setting up PostgreSQL...${NC}"
 # PostgreSQL will be configured later with database creation
