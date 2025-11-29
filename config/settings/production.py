@@ -2,7 +2,6 @@
 Production settings for stocks project.
 """
 
-import logging
 import os
 
 from .base import *
@@ -111,22 +110,3 @@ LOGGING["handlers"]["error_file"] = {
 }
 
 LOGGING["loggers"]["django"]["handlers"].append("error_file")
-
-# Sentry configuration (optional)
-SENTRY_DSN = os.environ.get("SENTRY_DSN", None)
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
-    from sentry_sdk.integrations.logging import LoggingIntegration
-
-    sentry_logging = LoggingIntegration(
-        level=logging.INFO,  # Capture info and above as breadcrumbs
-        event_level=logging.ERROR,  # Send errors as events
-    )
-
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[DjangoIntegration(), sentry_logging],
-        traces_sample_rate=0.1,
-        send_default_pii=True,
-    )
