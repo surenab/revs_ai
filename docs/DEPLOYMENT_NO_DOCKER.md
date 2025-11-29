@@ -343,6 +343,39 @@ The deploy script will automatically:
 - Collect static files
 - Restart services
 
+### Fast Deployment (Skip Frontend Build)
+
+If you haven't changed frontend code, use the fast deployment script:
+
+```bash
+./scripts/deploy-fast.sh
+```
+
+This skips the frontend build (which can be slow on smaller droplets) and only updates backend code.
+
+### Building Frontend Locally and Uploading
+
+For faster deployments, you can build the frontend on your local machine and upload it:
+
+```bash
+# On your local machine
+cd frontend
+npm run build
+tar -czf dist.tar.gz dist/
+
+# Upload to server
+scp dist.tar.gz stocks@YOUR_DROPLET_IP:~/apps/revs_ai/frontend/
+
+# On server, extract
+cd ~/apps/revs_ai/frontend
+tar -xzf dist.tar.gz
+rm dist.tar.gz
+
+# Then run fast deployment
+cd ~/apps/revs_ai
+./scripts/deploy-fast.sh
+```
+
 ## 🛡️ Step 14: Security Hardening
 
 ### 14.1 Configure Firewall

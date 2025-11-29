@@ -41,8 +41,20 @@ uv sync --all-groups
 
 echo -e "${YELLOW}📦 Building frontend...${NC}"
 cd frontend
-npm install
-npm run build
+
+# Check if node_modules exists, if not install dependencies
+if [ ! -d "node_modules" ]; then
+    echo "Installing npm dependencies..."
+    npm ci --prefer-offline --no-audit
+else
+    echo "Checking for npm dependency updates..."
+    npm install --prefer-offline --no-audit
+fi
+
+# Build with optimizations
+echo "Building frontend (this may take a few minutes on smaller servers)..."
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+
 cd ..
 
 echo -e "${YELLOW}🔄 Running database migrations...${NC}"
