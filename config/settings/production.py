@@ -96,7 +96,7 @@ REST_FRAMEWORK.update(
 )
 
 # Logging for production
-LOGGING["handlers"]["file"]["filename"] = "/var/log/django/django.log"
+LOGGING["handlers"]["file"]["filename"] = "/app/logs/django.log"
 LOGGING["handlers"]["console"]["level"] = "WARNING"
 LOGGING["loggers"]["django"]["level"] = "WARNING"
 LOGGING["loggers"]["users"]["level"] = "INFO"
@@ -105,7 +105,7 @@ LOGGING["loggers"]["users"]["level"] = "INFO"
 LOGGING["handlers"]["error_file"] = {
     "level": "ERROR",
     "class": "logging.FileHandler",
-    "filename": "/var/log/django/error.log",
+    "filename": "/app/logs/error.log",
     "formatter": "verbose",
 }
 

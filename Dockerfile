@@ -54,7 +54,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /app/logs /app/staticfiles /app/media /var/log/django && \
+RUN mkdir -p /app/logs /app/staticfiles /app/media && \
     chown -R app:app /app
 
 # Switch to app user
@@ -103,7 +103,7 @@ RUN uv sync --frozen
 COPY . .
 
 # Create directories
-RUN mkdir -p /app/staticfiles /app/media /app/logs /var/log/django
+RUN mkdir -p /app/staticfiles /app/media /app/logs
 
 # Expose port
 EXPOSE 8080

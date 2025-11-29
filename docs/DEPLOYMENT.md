@@ -419,7 +419,7 @@ Group=stocks
 WorkingDirectory=/home/stocks/apps/stocks
 Environment="PATH=/home/stocks/apps/stocks/.venv/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
-ExecStart=/home/stocks/apps/stocks/.venv/bin/celery -A config worker --loglevel=info --logfile=/var/log/celery/worker.log --pidfile=/var/run/celery/worker.pid --detach
+ExecStart=/home/stocks/apps/stocks/.venv/bin/celery -A config worker --loglevel=info --logfile=/app/logs/worker.log --pidfile=/var/run/celery/worker.pid --detach
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=always
 
@@ -447,7 +447,7 @@ Group=stocks
 WorkingDirectory=/home/stocks/apps/stocks
 Environment="PATH=/home/stocks/apps/stocks/.venv/bin"
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
-ExecStart=/home/stocks/apps/stocks/.venv/bin/celery -A config beat --loglevel=info --logfile=/var/log/celery/beat.log --pidfile=/var/run/celery/beat.pid --detach
+ExecStart=/home/stocks/apps/stocks/.venv/bin/celery -A config beat --loglevel=info --logfile=/app/logs/beat.log --pidfile=/var/run/celery/beat.pid --detach
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=always
 
@@ -459,8 +459,8 @@ WantedBy=multi-user.target
 
 ```bash
 # Create directories
-sudo mkdir -p /var/log/celery /var/run/celery
-sudo chown -R stocks:stocks /var/log/celery /var/run/celery
+sudo mkdir -p /apps/logs /var/run/celery
+sudo chown -R stocks:stocks /apps/logs /var/run/celery
 
 # Reload systemd
 sudo systemctl daemon-reload
