@@ -2,6 +2,24 @@
 
 A modern, production-ready full-stack application for stock market data management with a beautiful React frontend and comprehensive Django REST API backend.
 
+## 🛠️ Tech Stack Badges
+
+![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Django](https://img.shields.io/badge/Django-5.2.8-092E20?style=for-the-badge&logo=django&logoColor=white)
+![Django REST Framework](https://img.shields.io/badge/Django%20REST-3.16.1-red?style=for-the-badge&logo=django&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-3.0+-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7.0+-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-24.0+-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-1.25+-009639?style=for-the-badge&logo=nginx&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-5.4+-37814A?style=for-the-badge&logo=celery&logoColor=white)
+![Ruff](https://img.shields.io/badge/Ruff-0.8+-FFC83D?style=for-the-badge&logo=ruff&logoColor=black)
+![Pytest](https://img.shields.io/badge/Pytest-7.4+-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
+
 ## 🏗️ Project Overview
 
 This is a full-stack application featuring a React TypeScript frontend with a Django REST API backend, including:
@@ -935,13 +953,26 @@ uv run ruff format
 
 ### Pre-commit Hooks
 
-Pre-commit hooks automatically run code quality checks before each commit. This ensures that all code is properly formatted and linted before it's committed.
+Pre-commit hooks automatically run code quality checks **on every `git commit`**. This ensures that all code is properly formatted and linted before it's committed.
+
+#### Quick Setup
+
+```bash
+# Run the setup script (recommended)
+./scripts/setup-pre-commit.sh
+
+# Or manually:
+uv sync --all-groups
+uv run pre-commit install
+```
+
+#### Manual Setup
 
 ```bash
 # Install pre-commit (if not already installed)
 uv sync --all-groups
 
-# Install the git hooks
+# Install the git hooks (this makes pre-commit run on commit)
 uv run pre-commit install
 
 # Run pre-commit on all files (optional, for testing)
@@ -951,16 +982,22 @@ uv run pre-commit run --all-files
 uv run pre-commit autoupdate
 ```
 
-The pre-commit hooks will automatically:
-- Format code with `ruff format`
-- Check and fix linting issues with `ruff check`
+#### How It Works
+
+Once installed with `pre-commit install`, the hooks will **automatically run on every `git commit`**. The hooks will:
+
+- Format code with `ruff format` (auto-fixes formatting)
+- Check and fix linting issues with `ruff check` (auto-fixes when possible)
 - Check for trailing whitespace
 - Ensure files end with a newline
 - Validate YAML, JSON, and TOML files
 - Check for merge conflict markers
 - Check for debug statements
 
-**Note:** If pre-commit hooks fail, the commit will be blocked. Fix the issues and try committing again. The hooks will auto-format your code when possible.
+**Note:**
+- If pre-commit hooks fail, the commit will be **blocked**. Fix the issues and try committing again.
+- The hooks will auto-format your code when possible, but you may need to stage the changes and commit again.
+- Test files are automatically excluded from linting checks.
 
 ---
 
