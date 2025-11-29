@@ -38,11 +38,29 @@ sudo apt install -y \
     libpq-dev \
     python3-dev \
     python3-venv \
-    nodejs \
-    npm \
     ufw \
     fail2ban \
     unattended-upgrades
+
+echo -e "${YELLOW}📦 Installing Node.js 20...${NC}"
+# Check if Node.js is already installed
+if ! command -v node &> /dev/null; then
+    # Install Node.js 20 from NodeSource (includes npm)
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt install -y nodejs
+else
+    echo "Node.js is already installed: $(node --version)"
+    # Verify npm is available
+    if ! command -v npm &> /dev/null; then
+        echo "npm is missing, installing Node.js from NodeSource..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt install -y nodejs
+    fi
+fi
+
+# Verify Node.js and npm installation
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
 
 echo -e "${YELLOW}🐍 Installing Python 3.13...${NC}"
 # Add deadsnakes PPA for Python 3.13
