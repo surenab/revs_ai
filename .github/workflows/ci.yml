@@ -34,6 +34,6 @@ jobs:
       run: uv run ruff check .
 
     - name: Run tests
-      run: uv run pytest
+      run: uv run pytest --verbose
       env:
         DJANGO_SETTINGS_MODULE: config.settings.testing

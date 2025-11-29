@@ -4,15 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('stocks', '0005_order_transaction_type_alter_order_order_type_and_more'),
+        ("stocks", "0005_order_transaction_type_alter_order_order_type_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='order',
-            name='status',
-            field=models.CharField(choices=[('waiting', 'Waiting'), ('in_progress', 'In Progress'), ('done', 'Done'), ('cancelled', 'Cancelled'), ('insufficient_funds', 'Insufficient Funds')], default='waiting', help_text='Current status of the order', max_length=25, verbose_name='status'),
+            model_name="order",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("waiting", "Waiting"),
+                    ("in_progress", "In Progress"),
+                    ("done", "Done"),
+                    ("cancelled", "Cancelled"),
+                    ("insufficient_funds", "Insufficient Funds"),
+                ],
+                default="waiting",
+                help_text="Current status of the order",
+                max_length=25,
+                verbose_name="status",
+            ),
         ),
     ]

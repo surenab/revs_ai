@@ -5,25 +5,42 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('stocks', '0004_order_portfolio_order_and_more'),
+        ("stocks", "0004_order_portfolio_order_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='order',
-            name='transaction_type',
-            field=models.CharField(choices=[('buy', 'Buy'), ('sell', 'Sell')], default='buy', help_text='Type of transaction: buy or sell', max_length=4, verbose_name='transaction type'),
+            model_name="order",
+            name="transaction_type",
+            field=models.CharField(
+                choices=[("buy", "Buy"), ("sell", "Sell")],
+                default="buy",
+                help_text="Type of transaction: buy or sell",
+                max_length=4,
+                verbose_name="transaction type",
+            ),
         ),
         migrations.AlterField(
-            model_name='order',
-            name='order_type',
-            field=models.CharField(choices=[('market', 'Market Order - Execute at current price'), ('target', 'Target Order - Execute when price reaches target')], default='market', help_text='Type of order: market (immediate) or target (conditional)', max_length=10, verbose_name='order type'),
+            model_name="order",
+            name="order_type",
+            field=models.CharField(
+                choices=[
+                    ("market", "Market Order - Execute at current price"),
+                    ("target", "Target Order - Execute when price reaches target"),
+                ],
+                default="market",
+                help_text="Type of order: market (immediate) or target (conditional)",
+                max_length=10,
+                verbose_name="order type",
+            ),
         ),
         migrations.AddIndex(
-            model_name='order',
-            index=models.Index(fields=['transaction_type', 'status'], name='stocks_orde_transac_dd1f17_idx'),
+            model_name="order",
+            index=models.Index(
+                fields=["transaction_type", "status"],
+                name="stocks_orde_transac_dd1f17_idx",
+            ),
         ),
     ]

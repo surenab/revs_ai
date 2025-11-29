@@ -933,6 +933,35 @@ uv run ruff format
 ./scripts/docker-dev.sh format
 ```
 
+### Pre-commit Hooks
+
+Pre-commit hooks automatically run code quality checks before each commit. This ensures that all code is properly formatted and linted before it's committed.
+
+```bash
+# Install pre-commit (if not already installed)
+uv sync --all-groups
+
+# Install the git hooks
+uv run pre-commit install
+
+# Run pre-commit on all files (optional, for testing)
+uv run pre-commit run --all-files
+
+# Update pre-commit hooks (when .pre-commit-config.yaml changes)
+uv run pre-commit autoupdate
+```
+
+The pre-commit hooks will automatically:
+- Format code with `ruff format`
+- Check and fix linting issues with `ruff check`
+- Check for trailing whitespace
+- Ensure files end with a newline
+- Validate YAML, JSON, and TOML files
+- Check for merge conflict markers
+- Check for debug statements
+
+**Note:** If pre-commit hooks fail, the commit will be blocked. Fix the issues and try committing again. The hooks will auto-format your code when possible.
+
 ---
 
 ## 🛠️ Troubleshooting

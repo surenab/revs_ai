@@ -11,4 +11,4 @@ class StocksConfig(AppConfig):
     def ready(self):
         """Import signals when the app is ready."""
         with contextlib.suppress(ImportError):
-            import stocks.signals  # noqa: F401, PLC0415
+            import stocks.signals  # noqa: F401

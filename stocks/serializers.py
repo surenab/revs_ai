@@ -820,7 +820,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
         # Check for insufficient funds before executing (for buy orders)
         if order.transaction_type == "buy" and order.order_type == "market":
-            from users.models import UserProfile  # noqa: PLC0415
+            from users.models import UserProfile
 
             latest_price = order.stock.latest_price
             if latest_price:

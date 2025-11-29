@@ -40,5 +40,3 @@ Or use absolute paths from the repository root:
 ```markdown
 ![Dashboard](docs/screenshots/dashboard.png)
 ```
-
-

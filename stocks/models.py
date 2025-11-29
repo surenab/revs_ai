@@ -672,7 +672,7 @@ class Order(models.Model):
 
         # For buy orders, check if user has enough cash
         if self.transaction_type == "buy":
-            from users.models import UserProfile  # noqa: PLC0415
+            from users.models import UserProfile
 
             try:
                 user_profile = UserProfile.objects.get(user=self.user)
@@ -720,7 +720,7 @@ class Order(models.Model):
         total_cost = self.quantity * execution_price
         logger.info(f"Order {self.id} total cost: {total_cost}")
         # Get user profile for cash management
-        from users.models import UserProfile  # noqa: PLC0415
+        from users.models import UserProfile
 
         user_profile = UserProfile.objects.get(user=self.user)
         logger.info(f"Order {self.id} user profile: {user_profile.cash}")
