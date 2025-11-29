@@ -1,0 +1,38 @@
+{
+  "name": "stockapp",
+  "version": "1.0.0",
+  "description": "Full-stack stock market application with React frontend and Django backend",
+  "private": true,
+  "scripts": {
+    "dev": "./scripts/dev-local.sh",
+    "dev:win": "./scripts/dev-local.bat",
+    "frontend": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:install": "cd frontend && npm install",
+    "backend": "uv run python manage.py runserver",
+    "backend:migrate": "uv run python manage.py migrate",
+    "backend:shell": "uv run python manage.py shell",
+    "backend:admin": "uv run python manage.py createsuperuser",
+    "setup": "uv sync --dev && uv run python manage.py migrate && cd frontend && npm install",
+    "clean": "rm -rf .venv frontend/node_modules frontend/dist uv.lock",
+    "lint:frontend": "cd frontend && npm run lint",
+    "build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "react",
+    "django",
+    "typescript",
+    "tailwind",
+    "stock-market",
+    "full-stack"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.13.0"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#10B981;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#10B981;stop-opacity:0" />
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="url(#bgGradient)"/>
+  <path d="M 96 384 L 160 320 L 224 256 L 288 192 L 352 128 L 416 96"
+        stroke="#10B981"
+        stroke-width="12"
+        fill="none"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <path d="M 96 384 L 160 320 L 224 256 L 288 192 L 352 128 L 416 96 L 416 384 L 96 384 Z"
+        fill="url(#chartGradient)"/>
+  <circle cx="160" cy="320" r="8" fill="#10B981"/>
+  <circle cx="224" cy="256" r="8" fill="#10B981"/>
+  <circle cx="288" cy="192" r="8" fill="#10B981"/>
+  <circle cx="352" cy="128" r="8" fill="#10B981"/>
+  <circle cx="416" cy="96" r="8" fill="#10B981"/>
+  <path d="M 384 160 L 416 128 L 448 160 M 416 128 L 416 64"
+        stroke="#FFFFFF"
+        stroke-width="8"
+        fill="none"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>
