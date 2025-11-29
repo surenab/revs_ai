@@ -77,8 +77,44 @@ echo -e "${YELLOW}🗄️  Setting up PostgreSQL...${NC}"
 # PostgreSQL will be configured later with database creation
 
 echo -e "${YELLOW}🔴 Setting up Redis...${NC}"
-sudo systemctl enable redis-server
-sudo systemctl start redis-server
+# Check if Redis is already running
+if sudo systemctl is-active --quiet redis-server; then
+    echo "Redis is already running"
+else
+    # Enable Redis
+    sudo systemctl enable redis-server
+
+    # Try to start Redis
+    if sudo systemctl start redis-server; then
+        echo "Redis started successfully"
+    else
+        echo -e "${YELLOW}⚠️  Redis failed to start. Checking status...${NC}"
+        sudo systemctl status redis-server --no-pager -l || true
+        echo -e "${YELLOW}Attempting to fix Redis configuration...${NC}"
+
+        # Check if Redis config exists and fix common issues
+        if [ -f /etc/redis/redis.conf ]; then
+            # Make sure Redis is configured to bind to localhost
+            sudo sed -i 's/^bind.*/bind 127.0.0.1/' /etc/redis/redis.conf || true
+            # Make sure protected mode is set appropriately
+            sudo sed -i 's/^protected-mode.*/protected-mode yes/' /etc/redis/redis.conf || true
+        fi
+
+        # Try starting again
+        sudo systemctl start redis-server || {
+            echo -e "${RED}Redis still failed to start. You may need to check logs manually:${NC}"
+            echo "  sudo journalctl -xeu redis-server.service"
+            echo "  sudo tail -f /var/log/redis/redis-server.log"
+        }
+    fi
+fi
+
+# Verify Redis is running
+if sudo systemctl is-active --quiet redis-server; then
+    echo -e "${GREEN}✓ Redis is running${NC}"
+else
+    echo -e "${YELLOW}⚠️  Redis is not running. You may need to start it manually later.${NC}"
+fi
 
 echo -e "${YELLOW}🌐 Configuring firewall...${NC}"
 sudo ufw allow OpenSSH
