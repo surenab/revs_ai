@@ -66,6 +66,10 @@ exclude = [
     "site-packages",
     "venv",
     "migrations",
+    "**/tests/**",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/tests.py",
 ]
 
 # Same as Black.
@@ -171,6 +175,11 @@ ignore = [
     "PLR0913", # Too many arguments to function call
     "PLR2004", # Magic value used in comparison
     "PLW2901", # `for` loop variable overwritten by assignment target
+
+    # Ruff-specific rules
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
+    "INT001",  #
+    "G004",    # Use f-strings for string interpolation
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -207,6 +216,8 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "**/management/commands/**/*.py" = [
     "T201",    # print statements allowed in management commands
     "ARG001",  # Unused function argument (Django command structure)
+    "PLR0912", # Too many branches (management commands can be complex)
+    "PLR0915", # Too many statements (management commands can be complex)
 ]
 
 [tool.ruff.lint.isort]

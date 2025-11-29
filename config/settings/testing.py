@@ -2,21 +2,24 @@
 Testing settings for stocks project.
 """
 
-from .base import *  # noqa: F403, F401
+import tempfile
+
+from .base import *
 
 # Testing configuration
 DEBUG = True
 TESTING = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 # Use in-memory SQLite for faster tests
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
     }
 }
+
 
 # Disable migrations for faster tests
 class DisableMigrations:
@@ -26,42 +29,45 @@ class DisableMigrations:
     def __getitem__(self, item):
         return None
 
+
 MIGRATION_MODULES = DisableMigrations()
 
 # Password hashers for faster tests
 PASSWORD_HASHERS = [
-    'django.contrib.auth.hashers.MD5PasswordHasher',
+    "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
 # Email backend for testing
-EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Cache configuration for testing
 CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+    "default": {
+        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
     }
 }
 
 # Disable logging during tests
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.NullHandler',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.NullHandler",
         },
     },
-    'root': {
-        'handlers': ['console'],
+    "root": {
+        "handlers": ["console"],
     },
 }
 
 # REST Framework testing settings
-REST_FRAMEWORK.update({  # noqa: F405
-    'DEFAULT_THROTTLE_CLASSES': [],
-    'DEFAULT_THROTTLE_RATES': {},
-})
+REST_FRAMEWORK.update(
+    {
+        "DEFAULT_THROTTLE_CLASSES": [],
+        "DEFAULT_THROTTLE_RATES": {},
+    }
+)
 
 # Disable security features for testing
 SECURE_SSL_REDIRECT = False
@@ -70,13 +76,13 @@ SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
 # Media files for testing
-MEDIA_ROOT = '/tmp/test_media'
+MEDIA_ROOT = tempfile.mkdtemp(prefix="test_media_")
 
 # Static files for testing
-STATIC_ROOT = '/tmp/test_static'
+STATIC_ROOT = tempfile.mkdtemp(prefix="test_static_")
 
 # Test-specific settings
-TEST_RUNNER = 'django.test.runner.DiscoverRunner'
+TEST_RUNNER = "django.test.runner.DiscoverRunner"
 
 # Celery settings for testing (if using Celery)
 CELERY_TASK_ALWAYS_EAGER = True

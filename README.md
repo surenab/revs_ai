@@ -151,7 +151,10 @@ stocks/
 ├── 🐳 Dockerfile                # Multi-stage Docker build
 ├── 🐳 docker-compose*.yml        # Docker Compose configurations
 ├── 📋 pyproject.toml            # Python dependencies & Ruff config
-└── 📚 Documentation files
+└── 📁 docs/                     # Documentation
+    ├── FRONTEND_FEATURES.md     # Frontend features documentation
+    ├── BACKGROUND_JOBS.md       # Background jobs documentation
+    └── 📁 screenshots/          # Application screenshots
 ```
 
 ---
@@ -183,7 +186,7 @@ stocks/
 
 ```bash
 git clone <your-repository-url>
-cd stocks
+cd revs_ai
 ```
 
 ### Step 2: Install Python Dependencies
@@ -195,18 +198,83 @@ pip install uv
 # Install project dependencies
 uv sync
 
-# Or create virtual environment manually
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt  # If requirements.txt exists
+### Step 3: Install Node.js and npm
+
+If you don't have Node.js and npm installed, follow these instructions:
+
+**macOS (using Homebrew):**
+```bash
+# Install Homebrew if you don't have it
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Node.js (includes npm)
+brew install node
+
+# Verify installation
+node --version
+npm --version
 ```
 
-### Step 3: Install Frontend Dependencies
+**Ubuntu/Debian:**
+```bash
+# Update package index
+sudo apt update
+
+# Install Node.js and npm
+sudo apt install nodejs npm
+
+# Verify installation
+node --version
+npm --version
+```
+
+**Windows:**
+1. Download the Node.js installer from [nodejs.org](https://nodejs.org/)
+2. Run the installer and follow the setup wizard
+3. Verify installation in Command Prompt or PowerShell:
+   ```bash
+   node --version
+   npm --version
+   ```
+
+**Alternative: Using nvm (Node Version Manager) - Recommended**
+
+nvm allows you to easily switch between Node.js versions:
+
+**macOS/Linux:**
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# Restart terminal or source the profile
+source ~/.bashrc  # or ~/.zshrc
+
+# Install Node.js 18+ (LTS version)
+nvm install --lts
+nvm use --lts
+
+# Verify installation
+node --version
+npm --version
+```
+
+**Windows (nvm-windows):**
+1. Download nvm-windows from [github.com/coreybutler/nvm-windows/releases](https://github.com/coreybutler/nvm-windows/releases)
+2. Install the `nvm-setup.exe` file
+3. Open a new Command Prompt or PowerShell window
+4. Install Node.js:
+   ```bash
+   nvm install lts
+   nvm use lts
+   ```
+
+### Step 4: Install Frontend Dependencies
 
 ```bash
 cd frontend
 npm install
 cd ..
+mkdir logs
 ```
 
 ### Step 4: Configure Environment
@@ -254,16 +322,16 @@ GRANT ALL PRIVILEGES ON DATABASE stocks_dev TO stocks_user;
 export DJANGO_SETTINGS_MODULE=config.settings.development
 
 # Run migrations
-python manage.py migrate
+uv run python manage.py migrate
 
 # Create superuser
-python manage.py createsuperuser
+uv run python manage.py createsuperuser
 ```
 
 ### Step 7: Collect Static Files
 
 ```bash
-python manage.py collectstatic --noinput
+uv run python manage.py collectstatic --noinput
 ```
 
 ### Step 8: Start Development Servers
@@ -281,7 +349,7 @@ chmod +x scripts/dev-local.sh
 
 **Terminal 1 - Backend:**
 ```bash
-python manage.py runserver 0.0.0.0:8080
+uv run python manage.py runserver 0.0.0.0:8080
 ```
 
 **Terminal 2 - Frontend:**
@@ -348,7 +416,19 @@ This will:
 ./scripts/docker-dev.sh createsuperuser
 ```
 
-### Step 5: Install and Start Frontend (Separate Terminal)
+### Step 5: Install Node.js and npm (If Not Already Installed)
+
+The frontend runs on your local machine (not in Docker), so you need Node.js and npm installed. If you haven't installed them yet, follow the instructions in **Step 3** of the "Local Development Setup (Without Docker)" section above.
+
+**Quick check:**
+```bash
+node --version
+npm --version
+```
+
+If these commands fail, install Node.js and npm using one of the methods described in Step 3 above.
+
+### Step 6: Install and Start Frontend (Separate Terminal)
 
 ```bash
 cd frontend
@@ -356,7 +436,7 @@ npm install
 npm run dev
 ```
 
-### Step 6: Access the Application
+### Step 7: Access the Application
 
 - **React Frontend**: http://localhost:3000
 - **Django API**: http://localhost:8080
@@ -911,32 +991,19 @@ docker-compose -f docker-compose.yml -f docker-compose.development.yml build --n
 
 ---
 
-## 📚 Additional Documentation
-
-- **`API_DOCUMENTATION.md`** - Complete API reference
-- **`DOCKER_SETUP.md`** - Detailed Docker setup guide
-- **`RUFF_SETUP.md`** - Code quality configuration
-- **`BACKGROUND_JOBS.md`** - Celery background tasks documentation
-- **`FRONTEND_FEATURES.md`** - Frontend features documentation
-
----
-
-## 🤝 Contributing
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes**
-4. **Run tests**: `./scripts/docker-test.sh all`
-5. **Run code quality checks**: `./scripts/docker-dev.sh lint`
-6. **Commit your changes**: `git commit -m 'Add amazing feature'`
-7. **Push to the branch**: `git push origin feature/amazing-feature`
-8. **Open a Pull Request**
-
----
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+**View-Only License**
+
+This project is provided for viewing purposes only. You may NOT:
+
+- Use, copy, modify, or distribute this project or any part of it
+- Use this project for any commercial or non-commercial purposes
+- Fork, clone, or reproduce this project for any purpose
+- Create derivative works based on this project
+- Use any code, design, or content from this project
+
+**All rights reserved.** This project is strictly for viewing and educational reference only. Any unauthorized use, reproduction, or distribution is strictly prohibited.
 
 ---
 
@@ -945,7 +1012,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you encounter any issues or have questions:
 
 1. **Check the troubleshooting section** above
-2. **Review the documentation** files
+2. **Review the documentation** files in the `docs/` folder:
+   - [Frontend Features](docs/FRONTEND_FEATURES.md) - Complete frontend feature overview
+   - [Background Jobs](docs/BACKGROUND_JOBS.md) - Background job system documentation
 3. **Check existing issues** in the repository
 4. **Submit a support request** through the application's Contact Support page
 5. **Create a new issue** with detailed information

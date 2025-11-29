@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .models import SupportRequest, User, UserProfile
@@ -239,7 +240,10 @@ class SupportRequestAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
 
     fieldsets = (
-        (_("Request Information"), {"fields": ("id", "user", "email", "subject", "message")}),
+        (
+            _("Request Information"),
+            {"fields": ("id", "user", "email", "subject", "message")},
+        ),
         (
             _("Status & Priority"),
             {"fields": ("status", "priority", "resolved_at")},
@@ -258,7 +262,6 @@ class SupportRequestAdmin(admin.ModelAdmin):
 
     def mark_as_resolved(self, request, queryset):
         """Mark selected support requests as resolved."""
-        from django.utils import timezone
 
         count = queryset.update(status="resolved", resolved_at=timezone.now())
         self.message_user(request, f"{count} support request(s) marked as resolved.")

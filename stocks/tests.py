@@ -1,6 +1,6 @@
-import json
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from .models import Stock, StockPrice, UserWatchlist, StockAlert
+from .models import Stock, StockAlert, StockPrice, UserWatchlist
 
 User = get_user_model()
 
@@ -29,15 +29,15 @@ class StockModelTest(TestCase):
 
     def test_stock_creation(self):
         """Test stock model creation."""
-        self.assertEqual(self.stock.symbol, 'AAPL')
-        self.assertEqual(self.stock.name, 'Apple Inc.')
-        self.assertEqual(self.stock.exchange, 'NASDAQ')
-        self.assertTrue(self.stock.is_active)
+        assert self.stock.symbol == 'AAPL'
+        assert self.stock.name == 'Apple Inc.'
+        assert self.stock.exchange == 'NASDAQ'
+        assert self.stock.is_active
 
     def test_stock_str_representation(self):
         """Test stock string representation."""
         expected = 'AAPL - Apple Inc.'
-        self.assertEqual(str(self.stock), expected)
+        assert str(self.stock) == expected
 
 
 class StockPriceModelTest(TestCase):
@@ -62,24 +62,24 @@ class StockPriceModelTest(TestCase):
 
     def test_stock_price_creation(self):
         """Test stock price model creation."""
-        self.assertEqual(self.stock_price.stock, self.stock)
-        self.assertEqual(self.stock_price.open_price, Decimal('150.00'))
-        self.assertEqual(self.stock_price.close_price, Decimal('153.00'))
+        assert self.stock_price.stock == self.stock
+        assert self.stock_price.open_price == Decimal('150.00')
+        assert self.stock_price.close_price == Decimal('153.00')
 
     def test_price_change_calculation(self):
         """Test price change calculation."""
         expected_change = Decimal('3.00')  # 153.00 - 150.00
-        self.assertEqual(self.stock_price.price_change, expected_change)
+        assert self.stock_price.price_change == expected_change
 
     def test_price_change_percent_calculation(self):
         """Test price change percentage calculation."""
         expected_percent = Decimal('2.00')  # (3.00 / 150.00) * 100
-        self.assertEqual(self.stock_price.price_change_percent, expected_percent)
+        assert self.stock_price.price_change_percent == expected_percent
 
     def test_stock_price_str_representation(self):
         """Test stock price string representation."""
         expected = f'AAPL - {date.today()} (1d)'
-        self.assertEqual(str(self.stock_price), expected)
+        assert str(self.stock_price) == expected
 
 
 class UserWatchlistModelTest(TestCase):
@@ -104,14 +104,14 @@ class UserWatchlistModelTest(TestCase):
 
     def test_watchlist_creation(self):
         """Test watchlist model creation."""
-        self.assertEqual(self.watchlist.user, self.user)
-        self.assertEqual(self.watchlist.stock, self.stock)
-        self.assertEqual(self.watchlist.target_price, Decimal('160.00'))
+        assert self.watchlist.user == self.user
+        assert self.watchlist.stock == self.stock
+        assert self.watchlist.target_price == Decimal('160.00')
 
     def test_watchlist_str_representation(self):
         """Test watchlist string representation."""
         expected = 'test@example.com - AAPL'
-        self.assertEqual(str(self.watchlist), expected)
+        assert str(self.watchlist) == expected
 
 
 class StockAlertModelTest(TestCase):
@@ -136,16 +136,16 @@ class StockAlertModelTest(TestCase):
 
     def test_alert_creation(self):
         """Test alert model creation."""
-        self.assertEqual(self.alert.user, self.user)
-        self.assertEqual(self.alert.stock, self.stock)
-        self.assertEqual(self.alert.alert_type, 'above')
-        self.assertTrue(self.alert.is_active)
-        self.assertFalse(self.alert.is_triggered)
+        assert self.alert.user == self.user
+        assert self.alert.stock == self.stock
+        assert self.alert.alert_type == 'above'
+        assert self.alert.is_active
+        assert not self.alert.is_triggered
 
     def test_alert_str_representation(self):
         """Test alert string representation."""
         expected = 'test@example.com - AAPL above 160.00'
-        self.assertEqual(str(self.alert), expected)
+        assert str(self.alert) == expected
 
 
 class StockAPITest(APITestCase):
@@ -190,8 +190,8 @@ class StockAPITest(APITestCase):
         url = reverse('stocks:stock-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 2
 
     def test_stock_list_unauthenticated(self):
         """Test stock list endpoint without authentication."""
@@ -199,48 +199,48 @@ class StockAPITest(APITestCase):
         url = reverse('stocks:stock-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_stock_detail(self):
         """Test stock detail endpoint."""
         url = reverse('stocks:stock-detail', kwargs={'symbol': 'AAPL'})
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['symbol'], 'AAPL')
-        self.assertEqual(response.data['name'], 'Apple Inc.')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['symbol'] == 'AAPL'
+        assert response.data['name'] == 'Apple Inc.'
 
     def test_stock_search(self):
         """Test stock search endpoint."""
         url = reverse('stocks:stock-search')
         response = self.client.get(url, {'q': 'Apple'})
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['count'], 1)
-        self.assertEqual(response.data['results'][0]['symbol'], 'AAPL')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['symbol'] == 'AAPL'
 
     def test_stock_search_short_query(self):
         """Test stock search with short query."""
         url = reverse('stocks:stock-search')
         response = self.client.get(url, {'q': 'A'})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_stock_timeseries(self):
         """Test stock time series endpoint."""
         url = reverse('stocks:stock-timeseries', kwargs={'symbol': 'AAPL'})
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['stock']['symbol'], 'AAPL')
-        self.assertEqual(len(response.data['prices']), 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['stock']['symbol'] == 'AAPL'
+        assert len(response.data['prices']) == 1
 
     def test_stock_timeseries_invalid_symbol(self):
         """Test stock time series with invalid symbol."""
         url = reverse('stocks:stock-timeseries', kwargs={'symbol': 'INVALID'})
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 class WatchlistAPITest(APITestCase):
@@ -270,8 +270,8 @@ class WatchlistAPITest(APITestCase):
         }
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(UserWatchlist.objects.count(), 1)
+        assert response.status_code == status.HTTP_201_CREATED
+        assert UserWatchlist.objects.count() == 1
 
     def test_create_watchlist_invalid_symbol(self):
         """Test creating watchlist with invalid symbol."""
@@ -282,7 +282,7 @@ class WatchlistAPITest(APITestCase):
         }
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_list_watchlist(self):
         """Test listing user's watchlist."""
@@ -295,8 +295,8 @@ class WatchlistAPITest(APITestCase):
         url = reverse('stocks:watchlist-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 1
 
     def test_update_watchlist_entry(self):
         """Test updating a watchlist entry."""
@@ -310,9 +310,9 @@ class WatchlistAPITest(APITestCase):
         data = {'target_price': '170.00'}
         response = self.client.patch(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         watchlist.refresh_from_db()
-        self.assertEqual(watchlist.target_price, Decimal('170.00'))
+        assert watchlist.target_price == Decimal('170.00')
 
     def test_delete_watchlist_entry(self):
         """Test deleting a watchlist entry."""
@@ -325,8 +325,8 @@ class WatchlistAPITest(APITestCase):
         url = reverse('stocks:watchlist-detail', kwargs={'pk': watchlist.pk})
         response = self.client.delete(url)
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertEqual(UserWatchlist.objects.count(), 0)
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert UserWatchlist.objects.count() == 0
 
 
 class StockAlertAPITest(APITestCase):
@@ -356,8 +356,8 @@ class StockAlertAPITest(APITestCase):
         }
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(StockAlert.objects.count(), 1)
+        assert response.status_code == status.HTTP_201_CREATED
+        assert StockAlert.objects.count() == 1
 
     def test_create_alert_invalid_threshold(self):
         """Test creating alert with invalid threshold."""
@@ -369,7 +369,7 @@ class StockAlertAPITest(APITestCase):
         }
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_list_stock_alerts(self):
         """Test listing user's stock alerts."""
@@ -383,8 +383,8 @@ class StockAlertAPITest(APITestCase):
         url = reverse('stocks:alert-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 1
 
     def test_filter_alerts_by_status(self):
         """Test filtering alerts by active status."""
@@ -406,8 +406,8 @@ class StockAlertAPITest(APITestCase):
         url = reverse('stocks:alert-list')
         response = self.client.get(url, {'is_active': 'true'})
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 1
 
 
 class DashboardAPITest(APITestCase):
@@ -447,9 +447,9 @@ class DashboardAPITest(APITestCase):
         url = reverse('stocks:user-dashboard')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['watchlist']), 1)
-        self.assertEqual(response.data['alerts_summary']['active_alerts'], 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['watchlist']) == 1
+        assert response.data['alerts_summary']['active_alerts'] == 1
 
 
 class MarketSummaryAPITest(APITestCase):
@@ -486,8 +486,8 @@ class MarketSummaryAPITest(APITestCase):
         url = reverse('stocks:market-summary')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('top_gainers', response.data)
-        self.assertIn('top_losers', response.data)
-        self.assertIn('most_active', response.data)
-        self.assertIn('date', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'top_gainers' in response.data
+        assert 'top_losers' in response.data
+        assert 'most_active' in response.data
+        assert 'date' in response.data

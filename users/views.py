@@ -1,3 +1,5 @@
+import contextlib
+
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.tokens import default_token_generator
@@ -11,7 +13,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import SupportRequest, User
+from .models import User
 from .serializers import (
     PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
@@ -39,7 +41,7 @@ class UserRegistrationView(generics.CreateAPIView):
         user = serializer.save()
 
         # Create token for the user
-        token, created = Token.objects.get_or_create(user=user)
+        token, _created = Token.objects.get_or_create(user=user)
 
         # Return user data with token
         user_serializer = UserSerializer(user)
@@ -73,7 +75,7 @@ class UserLoginView(generics.GenericAPIView):
         login(request, user)
 
         # Get or create token
-        token, created = Token.objects.get_or_create(user=user)
+        token, _created = Token.objects.get_or_create(user=user)
 
         # Return user data with token
         user_serializer = UserSerializer(user)
@@ -103,11 +105,9 @@ class UserLogoutView(generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         """Logout user and delete token."""
-        try:
+        with contextlib.suppress(BaseException):
             # Delete the user's token
             request.user.auth_token.delete()
-        except:
-            pass
 
         # Logout user
         logout(request)
@@ -157,6 +157,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     "message": _("Profile updated successfully."),
                 }
             )
+        return None
 
     @action(detail=False, methods=["post"])
     def change_password(self, request):
@@ -298,12 +299,16 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 @permission_classes([permissions.AllowAny])
 def create_support_request(request):
     """Create a new support request."""
-    serializer = SupportRequestSerializer(data=request.data, context={"request": request})
+    serializer = SupportRequestSerializer(
+        data=request.data, context={"request": request}
+    )
     if serializer.is_valid():
         support_request = serializer.save()
         return Response(
             {
-                "message": _("Support request submitted successfully. We'll get back to you soon."),
+                "message": _(
+                    "Support request submitted successfully. We'll get back to you soon."
+                ),
                 "id": str(support_request.id),
             },
             status=status.HTTP_201_CREATED,

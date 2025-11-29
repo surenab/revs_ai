@@ -8,7 +8,6 @@ from .views import (
     UserLogoutView,
     UserRegistrationView,
     UserViewSet,
-    create_support_request,
 )
 
 app_name = "users"

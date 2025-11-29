@@ -2,7 +2,6 @@
 Comprehensive tests for User API endpoints.
 """
 
-import json
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
 from django.test import TestCase
@@ -32,13 +31,13 @@ class UserModelTest(TestCase):
         """Test creating a user."""
         user = User.objects.create_user(**self.user_data)
 
-        self.assertEqual(user.email, self.user_data['email'])
-        self.assertEqual(user.first_name, self.user_data['first_name'])
-        self.assertEqual(user.last_name, self.user_data['last_name'])
-        self.assertTrue(user.check_password(self.user_data['password']))
-        self.assertTrue(user.is_active)
-        self.assertFalse(user.is_staff)
-        self.assertFalse(user.is_superuser)
+        assert user.email == self.user_data['email']
+        assert user.first_name == self.user_data['first_name']
+        assert user.last_name == self.user_data['last_name']
+        assert user.check_password(self.user_data['password'])
+        assert user.is_active
+        assert not user.is_staff
+        assert not user.is_superuser
 
     def test_create_superuser(self):
         """Test creating a superuser."""
@@ -47,38 +46,38 @@ class UserModelTest(TestCase):
             password='adminpass123'
         )
 
-        self.assertEqual(user.email, 'admin@example.com')
-        self.assertTrue(user.is_active)
-        self.assertTrue(user.is_staff)
-        self.assertTrue(user.is_superuser)
+        assert user.email == 'admin@example.com'
+        assert user.is_active
+        assert user.is_staff
+        assert user.is_superuser
 
     def test_user_str_method(self):
         """Test user string representation."""
         user = User.objects.create_user(**self.user_data)
-        self.assertEqual(str(user), self.user_data['email'])
+        assert str(user) == self.user_data['email']
 
     def test_user_full_name(self):
         """Test user full name methods."""
         user = User.objects.create_user(**self.user_data)
 
         expected_full_name = f"{self.user_data['first_name']} {self.user_data['last_name']}"
-        self.assertEqual(user.get_full_name(), expected_full_name)
-        self.assertEqual(user.full_name, expected_full_name)
-        self.assertEqual(user.get_short_name(), self.user_data['first_name'])
+        assert user.get_full_name() == expected_full_name
+        assert user.full_name == expected_full_name
+        assert user.get_short_name() == self.user_data['first_name']
 
     def test_user_profile_creation(self):
         """Test that UserProfile is automatically created."""
         user = User.objects.create_user(**self.user_data)
 
-        self.assertTrue(hasattr(user, 'profile'))
-        self.assertIsInstance(user.profile, UserProfile)
-        self.assertEqual(user.profile.user, user)
+        assert hasattr(user, 'profile')
+        assert isinstance(user.profile, UserProfile)
+        assert user.profile.user == user
 
     def test_user_profile_str_method(self):
         """Test user profile string representation."""
         user = User.objects.create_user(**self.user_data)
         expected_str = f"{user.email}'s Profile"
-        self.assertEqual(str(user.profile), expected_str)
+        assert str(user.profile) == expected_str
 
 
 class UserRegistrationAPITest(APITestCase):
@@ -100,17 +99,17 @@ class UserRegistrationAPITest(APITestCase):
         """Test successful user registration."""
         response = self.client.post(self.register_url, self.valid_user_data)
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('user', response.data)
-        self.assertIn('token', response.data)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_201_CREATED
+        assert 'user' in response.data
+        assert 'token' in response.data
+        assert 'message' in response.data
 
         # Check user was created
-        self.assertTrue(User.objects.filter(email=self.valid_user_data['email']).exists())
+        assert User.objects.filter(email=self.valid_user_data['email']).exists()
 
         # Check token was created
         user = User.objects.get(email=self.valid_user_data['email'])
-        self.assertTrue(Token.objects.filter(user=user).exists())
+        assert Token.objects.filter(user=user).exists()
 
     def test_user_registration_password_mismatch(self):
         """Test registration with password mismatch."""
@@ -119,8 +118,8 @@ class UserRegistrationAPITest(APITestCase):
 
         response = self.client.post(self.register_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('password_confirm', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'password_confirm' in response.data
 
     def test_user_registration_duplicate_email(self):
         """Test registration with duplicate email."""
@@ -132,7 +131,7 @@ class UserRegistrationAPITest(APITestCase):
 
         response = self.client.post(self.register_url, self.valid_user_data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_user_registration_invalid_email(self):
         """Test registration with invalid email."""
@@ -141,16 +140,16 @@ class UserRegistrationAPITest(APITestCase):
 
         response = self.client.post(self.register_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('email', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data
 
     def test_user_registration_missing_fields(self):
         """Test registration with missing required fields."""
         response = self.client.post(self.register_url, {})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('email', response.data)
-        self.assertIn('password', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data
+        assert 'password' in response.data
 
 
 class UserLoginAPITest(APITestCase):
@@ -176,13 +175,13 @@ class UserLoginAPITest(APITestCase):
 
         response = self.client.post(self.login_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('user', response.data)
-        self.assertIn('token', response.data)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'user' in response.data
+        assert 'token' in response.data
+        assert 'message' in response.data
 
         # Check token was created
-        self.assertTrue(Token.objects.filter(user=self.user).exists())
+        assert Token.objects.filter(user=self.user).exists()
 
     def test_user_login_invalid_credentials(self):
         """Test login with invalid credentials."""
@@ -193,7 +192,7 @@ class UserLoginAPITest(APITestCase):
 
         response = self.client.post(self.login_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_user_login_inactive_user(self):
         """Test login with inactive user."""
@@ -207,13 +206,13 @@ class UserLoginAPITest(APITestCase):
 
         response = self.client.post(self.login_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_user_login_missing_fields(self):
         """Test login with missing fields."""
         response = self.client.post(self.login_url, {})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 class UserLogoutAPITest(APITestCase):
@@ -235,17 +234,17 @@ class UserLogoutAPITest(APITestCase):
 
         response = self.client.post(self.logout_url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check token was deleted
-        self.assertFalse(Token.objects.filter(user=self.user).exists())
+        assert not Token.objects.filter(user=self.user).exists()
 
     def test_user_logout_unauthenticated(self):
         """Test logout without authentication."""
         response = self.client.post(self.logout_url)
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class UserViewSetTest(APITestCase):
@@ -290,9 +289,9 @@ class UserViewSetTest(APITestCase):
         url = reverse('users:user-me')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['email'], self.user.email)
-        self.assertIn('profile', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['email'] == self.user.email
+        assert 'profile' in response.data
 
     def test_user_me_update(self):
         """Test updating current user profile."""
@@ -310,21 +309,21 @@ class UserViewSetTest(APITestCase):
 
         response = self.client.patch(url, data, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['user']['first_name'], 'Updated')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['first_name'] == 'Updated'
 
         # Check database was updated
         self.user.refresh_from_db()
-        self.assertEqual(self.user.first_name, 'Updated')
-        self.assertEqual(self.user.bio, 'Updated bio')
-        self.assertEqual(self.user.profile.company, 'Test Company')
+        assert self.user.first_name == 'Updated'
+        assert self.user.bio == 'Updated bio'
+        assert self.user.profile.company == 'Test Company'
 
     def test_user_me_unauthenticated(self):
         """Test accessing user profile without authentication."""
         url = reverse('users:user-me')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_change_password_success(self):
         """Test successful password change."""
@@ -339,15 +338,15 @@ class UserViewSetTest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check password was changed
         self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password('newpass123'))
+        assert self.user.check_password('newpass123')
 
         # Check token was deleted (user needs to re-login)
-        self.assertFalse(Token.objects.filter(user=self.user).exists())
+        assert not Token.objects.filter(user=self.user).exists()
 
     def test_change_password_wrong_old_password(self):
         """Test password change with wrong old password."""
@@ -362,8 +361,8 @@ class UserViewSetTest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('old_password', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'old_password' in response.data
 
     def test_change_password_mismatch(self):
         """Test password change with password mismatch."""
@@ -378,8 +377,8 @@ class UserViewSetTest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('new_password_confirm', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'new_password_confirm' in response.data
 
     def test_user_list_staff_only(self):
         """Test that only staff can list users."""
@@ -389,10 +388,10 @@ class UserViewSetTest(APITestCase):
         url = reverse('users:user-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         # Regular user should only see themselves
-        self.assertEqual(len(response.data['results']), 1)
-        self.assertEqual(response.data['results'][0]['email'], self.user.email)
+        assert len(response.data['results']) == 1
+        assert response.data['results'][0]['email'] == self.user.email
 
     def test_user_list_staff_access(self):
         """Test that staff can list all users."""
@@ -401,9 +400,9 @@ class UserViewSetTest(APITestCase):
         url = reverse('users:user-list')
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         # Staff should see all users
-        self.assertGreaterEqual(len(response.data['results']), 3)
+        assert len(response.data['results']) >= 3
 
     def test_verify_user_admin_only(self):
         """Test that only admin can verify users."""
@@ -413,19 +412,19 @@ class UserViewSetTest(APITestCase):
         url = reverse('users:user-verify-user', kwargs={'pk': self.user.pk})
         response = self.client.post(url)
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         # Test with admin
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
 
         response = self.client.post(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check user was verified
         self.user.refresh_from_db()
-        self.assertTrue(self.user.is_verified)
+        assert self.user.is_verified
 
     def test_deactivate_user_admin_only(self):
         """Test that only admin can deactivate users."""
@@ -435,22 +434,22 @@ class UserViewSetTest(APITestCase):
         url = reverse('users:user-deactivate-user', kwargs={'pk': self.staff_user.pk})
         response = self.client.post(url)
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         # Test with admin
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
 
         response = self.client.post(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check user was deactivated
         self.staff_user.refresh_from_db()
-        self.assertFalse(self.staff_user.is_active)
+        assert not self.staff_user.is_active
 
         # Check user's tokens were deleted
-        self.assertFalse(Token.objects.filter(user=self.staff_user).exists())
+        assert not Token.objects.filter(user=self.staff_user).exists()
 
 
 class PasswordResetAPITest(APITestCase):
@@ -471,12 +470,12 @@ class PasswordResetAPITest(APITestCase):
 
         response = self.client.post(self.password_reset_url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check email was sent
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Password Reset Request', mail.outbox[0].subject)
+        assert len(mail.outbox) == 1
+        assert 'Password Reset Request' in mail.outbox[0].subject
 
     def test_password_reset_request_nonexistent_email(self):
         """Test password reset request with nonexistent email."""
@@ -485,10 +484,10 @@ class PasswordResetAPITest(APITestCase):
         response = self.client.post(self.password_reset_url, data)
 
         # Should still return success for security reasons
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         # But no email should be sent
-        self.assertEqual(len(mail.outbox), 0)
+        assert len(mail.outbox) == 0
 
     def test_password_reset_confirm_success(self):
         """Test successful password reset confirmation."""
@@ -504,15 +503,15 @@ class PasswordResetAPITest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'message' in response.data
 
         # Check password was changed
         self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password('newpassword123'))
+        assert self.user.check_password('newpassword123')
 
         # Check tokens were deleted
-        self.assertFalse(Token.objects.filter(user=self.user).exists())
+        assert not Token.objects.filter(user=self.user).exists()
 
     def test_password_reset_confirm_invalid_token(self):
         """Test password reset confirmation with invalid token."""
@@ -526,8 +525,8 @@ class PasswordResetAPITest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'error' in response.data
 
     def test_password_reset_confirm_password_mismatch(self):
         """Test password reset confirmation with password mismatch."""
@@ -542,8 +541,8 @@ class PasswordResetAPITest(APITestCase):
 
         response = self.client.post(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('new_password_confirm', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'new_password_confirm' in response.data
 
 
 class UserAPIPermissionsTest(APITestCase):
@@ -573,7 +572,7 @@ class UserAPIPermissionsTest(APITestCase):
         response = self.client.get(url)
 
         # Should return 404 because user can only see themselves
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_user_cannot_update_other_user(self):
         """Test that users cannot update other users."""
@@ -584,7 +583,7 @@ class UserAPIPermissionsTest(APITestCase):
 
         response = self.client.patch(url, data)
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_unauthenticated_access_denied(self):
         """Test that unauthenticated users cannot access protected endpoints."""
@@ -596,7 +595,7 @@ class UserAPIPermissionsTest(APITestCase):
 
         for endpoint in endpoints:
             response = self.client.get(endpoint)
-            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class UserAPIIntegrationTest(APITestCase):
@@ -620,7 +619,7 @@ class UserAPIIntegrationTest(APITestCase):
         register_url = reverse('users:register')
         register_response = self.client.post(register_url, register_data)
 
-        self.assertEqual(register_response.status_code, status.HTTP_201_CREATED)
+        assert register_response.status_code == status.HTTP_201_CREATED
         registration_token = register_response.data['token']
 
         # 2. Use token to access protected endpoint
@@ -629,8 +628,8 @@ class UserAPIIntegrationTest(APITestCase):
         me_url = reverse('users:user-me')
         me_response = self.client.get(me_url)
 
-        self.assertEqual(me_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(me_response.data['email'], register_data['email'])
+        assert me_response.status_code == status.HTTP_200_OK
+        assert me_response.data['email'] == register_data['email']
 
         # 3. Update profile
         update_data = {
@@ -643,8 +642,8 @@ class UserAPIIntegrationTest(APITestCase):
 
         update_response = self.client.patch(me_url, update_data, format='json')
 
-        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(update_response.data['user']['bio'], 'Integration test user')
+        assert update_response.status_code == status.HTTP_200_OK
+        assert update_response.data['user']['bio'] == 'Integration test user'
 
         # 4. Change password
         password_url = reverse('users:user-change-password')
@@ -656,7 +655,7 @@ class UserAPIIntegrationTest(APITestCase):
 
         password_response = self.client.post(password_url, password_data)
 
-        self.assertEqual(password_response.status_code, status.HTTP_200_OK)
+        assert password_response.status_code == status.HTTP_200_OK
 
         # 5. Login with new password (need to clear credentials first)
         self.client.credentials()  # Clear old token
@@ -669,8 +668,8 @@ class UserAPIIntegrationTest(APITestCase):
 
         login_response = self.client.post(login_url, login_data)
 
-        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
-        self.assertIn('token', login_response.data)
+        assert login_response.status_code == status.HTTP_200_OK
+        assert 'token' in login_response.data
 
         # 6. Logout
         new_token = login_response.data['token']
@@ -679,7 +678,7 @@ class UserAPIIntegrationTest(APITestCase):
         logout_url = reverse('users:logout')
         logout_response = self.client.post(logout_url)
 
-        self.assertEqual(logout_response.status_code, status.HTTP_200_OK)
+        assert logout_response.status_code == status.HTTP_200_OK
 
     def test_admin_user_management_workflow(self):
         """Test admin user management workflow."""
@@ -702,23 +701,23 @@ class UserAPIIntegrationTest(APITestCase):
         list_url = reverse('users:user-list')
         list_response = self.client.get(list_url)
 
-        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        self.assertGreaterEqual(len(list_response.data['results']), 2)
+        assert list_response.status_code == status.HTTP_200_OK
+        assert len(list_response.data['results']) >= 2
 
         # 2. Verify user
         verify_url = reverse('users:user-verify-user', kwargs={'pk': user.pk})
         verify_response = self.client.post(verify_url)
 
-        self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
+        assert verify_response.status_code == status.HTTP_200_OK
 
         user.refresh_from_db()
-        self.assertTrue(user.is_verified)
+        assert user.is_verified
 
         # 3. Deactivate user
         deactivate_url = reverse('users:user-deactivate-user', kwargs={'pk': user.pk})
         deactivate_response = self.client.post(deactivate_url)
 
-        self.assertEqual(deactivate_response.status_code, status.HTTP_200_OK)
+        assert deactivate_response.status_code == status.HTTP_200_OK
 
         user.refresh_from_db()
-        self.assertFalse(user.is_active)
+        assert not user.is_active

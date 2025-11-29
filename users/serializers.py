@@ -1,3 +1,5 @@
+import contextlib
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext_lazy as _
@@ -88,8 +90,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Create a new user with encrypted password."""
         validated_data.pop("password_confirm", None)
-        user = User.objects.create_user(**validated_data)
-        return user
+        return User.objects.create_user(**validated_data)
 
 
 class UserLoginSerializer(serializers.Serializer):
@@ -175,11 +176,8 @@ class PasswordResetSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         """Validate that a user with this email exists."""
-        try:
-            user = User.objects.get(email=value, is_active=True)
-        except User.DoesNotExist:
-            # Don't reveal whether the email exists or not
-            pass
+        with contextlib.suppress(BaseException):
+            User.objects.get(email=value, is_active=True)
         return value
 
 

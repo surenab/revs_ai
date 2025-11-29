@@ -6,6 +6,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
@@ -143,9 +144,9 @@ class UserProfile(models.Model):
         _("cash balance"),
         max_digits=15,
         decimal_places=2,
-        default=Decimal('10000.00'),  # Default starting cash: $10,000
-        validators=[MinValueValidator(Decimal('0.00'))],
-        help_text=_("Available cash balance for trading")
+        default=Decimal("10000.00"),  # Default starting cash: $10,000
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Available cash balance for trading"),
     )
 
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
@@ -234,7 +235,6 @@ class SupportRequest(models.Model):
 
     def mark_as_resolved(self):
         """Mark the support request as resolved."""
-        from django.utils import timezone
 
         self.status = "resolved"
         self.resolved_at = timezone.now()
