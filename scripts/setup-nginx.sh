@@ -292,9 +292,26 @@ sudo rm -f /etc/nginx/sites-enabled/default
 
 # Test Nginx configuration
 echo -e "${YELLOW}Testing Nginx configuration...${NC}"
-sudo nginx -t
+if sudo nginx -t; then
+    echo -e "${GREEN}✓ Nginx configuration is valid${NC}"
 
-echo -e "${GREEN}✅ Nginx configuration created!${NC}"
+    # Start or reload Nginx
+    if sudo systemctl is-active --quiet nginx; then
+        echo -e "${YELLOW}Reloading Nginx...${NC}"
+        sudo systemctl reload nginx
+    else
+        echo -e "${YELLOW}Starting Nginx...${NC}"
+        sudo systemctl start nginx
+        sudo systemctl enable nginx
+    fi
+    echo -e "${GREEN}✓ Nginx is running${NC}"
+else
+    echo -e "${RED}✗ Nginx configuration test failed!${NC}"
+    echo "Please check the error messages above."
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Nginx configuration created and started!${NC}"
 echo ""
 if [ "$IS_IP" = true ]; then
     echo "⚠️  IP address detected - HTTP-only configuration created."

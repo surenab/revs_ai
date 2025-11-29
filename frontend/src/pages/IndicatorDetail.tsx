@@ -1,9 +1,8 @@
 import React, { useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import { ArrowLeft, TrendingUp, BarChart3 } from "lucide-react";
 import { AVAILABLE_INDICATORS } from "../utils/indicatorsConfig";
-import type { Indicator } from "../utils/indicatorsConfig";
 
 const IndicatorDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();

@@ -33,7 +33,7 @@ set +a
 
 # Install uv if not in PATH
 if ! command -v uv &> /dev/null; then
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 echo -e "${YELLOW}📦 Updating Python dependencies...${NC}"

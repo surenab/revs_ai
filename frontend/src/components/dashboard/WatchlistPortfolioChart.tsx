@@ -155,14 +155,16 @@ const WatchlistPortfolioChart: React.FC = () => {
 
     stocksData.forEach((stock) => {
       stock.data.forEach((point) => {
+        // Handle both StockPrice (has date) and IntradayPrice (has timestamp)
+        const dateOrTimestamp = 'date' in point ? point.date : point.timestamp;
         const timeKey = shouldUseIntradayData(selectedPeriod)
-          ? format(parseISO(point.timestamp || point.date), "HH:mm")
-          : format(parseISO(point.date), "MM/dd");
+          ? format(parseISO(dateOrTimestamp), "HH:mm")
+          : format(parseISO(dateOrTimestamp), "MM/dd");
 
         if (!timeMap.has(timeKey)) {
           timeMap.set(timeKey, {
             time: timeKey,
-            date: point.date,
+            date: dateOrTimestamp,
           });
         }
 

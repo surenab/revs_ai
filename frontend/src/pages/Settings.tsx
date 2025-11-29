@@ -1,22 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Settings as SettingsIcon,
   Bell,
   TrendingUp,
   DollarSign,
   BarChart3,
-  Globe,
-  Moon,
-  Sun,
   Shield,
   Save,
   RefreshCw,
   AlertCircle,
-  CheckCircle,
   Clock,
   Target,
   Zap,
@@ -69,14 +64,14 @@ const settingsSchema = z.object({
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
 const Settings: React.FC = () => {
-  const { user } = useAuth();
+  useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("trading");
 
   const {
     register,
     handleSubmit,
-    formState: { errors, isDirty },
+    formState: { isDirty },
     reset,
     watch,
   } = useForm<SettingsFormData>({
