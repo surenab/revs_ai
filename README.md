@@ -490,9 +490,51 @@ npm run dev
 
 ## 🚀 Production Deployment
 
-> 📖 **For a complete step-by-step guide to deploy on DigitalOcean, see [DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+> 📖 **For a complete step-by-step guide to deploy on DigitalOcean (No Docker), see [DEPLOYMENT_NO_DOCKER.md](docs/DEPLOYMENT_NO_DOCKER.md)**
+>
+> 📖 **For Docker-based deployment, see [DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 
-This section provides a quick overview. For detailed instructions including server setup, SSL configuration, and monitoring, refer to the [complete deployment guide](docs/DEPLOYMENT.md).
+This section provides a quick overview. For detailed instructions, refer to the [complete deployment guide](docs/DEPLOYMENT_NO_DOCKER.md).
+
+### Quick Setup (No Docker)
+
+```bash
+# On your DigitalOcean droplet:
+
+# 1. Clone repository
+git clone https://github.com/surenab/revs_ai.git
+cd revs_ai
+
+# 2. Run server setup (installs all dependencies)
+./scripts/setup-server.sh
+
+# 3. Configure environment
+cp env.example .env.production
+nano .env.production
+
+# 4. Set up application
+./scripts/setup-app.sh
+
+# 5. Set up services
+./scripts/setup-services.sh
+
+# 6. Configure Nginx
+./scripts/setup-nginx.sh
+
+# 7. Deploy
+./scripts/deploy.sh
+
+# 8. Set up SSL (if you have domain)
+sudo certbot --nginx -d your-domain.com
+```
+
+### Updating After Git Pull
+
+```bash
+cd ~/revs_ai
+git pull
+./scripts/deploy.sh
+```
 
 ### Quick Deployment
 
