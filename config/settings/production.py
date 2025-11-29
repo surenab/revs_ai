@@ -113,7 +113,7 @@ LOGGING["handlers"]["error_file"] = {
 LOGGING["loggers"]["django"]["handlers"].append("error_file")
 
 # Sentry configuration (optional)
-SENTRY_DSN = os.environ.get("SENTRY_DSN")
+SENTRY_DSN = os.environ.get("SENTRY_DSN", None)
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
