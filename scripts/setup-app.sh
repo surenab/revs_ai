@@ -33,7 +33,7 @@ uv sync --all-groups
 
 echo -e "${YELLOW}📦 Setting up frontend...${NC}"
 cd frontend
-npm install
+# npm install
 cd ..
 
 echo -e "${YELLOW}📁 Creating necessary directories...${NC}"

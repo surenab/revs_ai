@@ -2,6 +2,7 @@
 Production settings for stocks project.
 """
 
+import logging
 import os
 
 from .base import *
