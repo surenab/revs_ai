@@ -31,10 +31,8 @@ fi
 # Install Python dependencies
 uv sync --all-groups
 
-echo -e "${YELLOW}📦 Setting up frontend...${NC}"
-cd frontend
-# npm install
-cd ..
+echo -e "${YELLOW}📦 Frontend setup skipped (will be uploaded from local machine)${NC}"
+echo "   Frontend should be built locally and uploaded via: ./scripts/upload-frontend.sh"
 
 echo -e "${YELLOW}📁 Creating necessary directories...${NC}"
 mkdir -p staticfiles media logs backups
@@ -98,4 +96,7 @@ echo -e "${GREEN}✅ Application setup completed!${NC}"
 echo ""
 echo "Next steps:"
 echo "1. Review and update .env.production"
-echo "2. Run: ./scripts/deploy.sh"
+echo "2. Set up services: ./scripts/setup-services.sh"
+echo "3. Configure Nginx: ./scripts/setup-nginx.sh"
+echo "4. On local machine: Build and upload frontend with ./scripts/upload-frontend.sh"
+echo "5. Deploy: ./scripts/deploy.sh"

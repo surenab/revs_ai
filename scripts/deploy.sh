@@ -39,23 +39,14 @@ fi
 echo -e "${YELLOW}📦 Updating Python dependencies...${NC}"
 uv sync --all-groups
 
-echo -e "${YELLOW}📦 Building frontend...${NC}"
-cd frontend
-
-# Check if node_modules exists, if not install dependencies
-if [ ! -d "node_modules" ]; then
-    echo "Installing npm dependencies..."
-    npm ci --prefer-offline --no-audit
+echo -e "${YELLOW}📦 Frontend: Checking for uploaded build...${NC}"
+if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
+    echo -e "${GREEN}✓ Frontend build found${NC}"
 else
-    echo "Checking for npm dependency updates..."
-    npm install --prefer-offline --no-audit
+    echo -e "${YELLOW}⚠️  Frontend build not found${NC}"
+    echo "   Upload frontend from local machine using: ./scripts/upload-frontend.sh"
+    echo "   Or build locally and upload manually"
 fi
-
-# Build with optimizations
-echo "Building frontend (this may take a few minutes on smaller servers)..."
-NODE_OPTIONS="--max-old-space-size=2048" npm run build
-
-cd ..
 
 echo -e "${YELLOW}🔄 Running database migrations...${NC}"
 uv run python manage.py migrate --settings=config.settings.production

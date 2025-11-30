@@ -26,6 +26,14 @@ Complete step-by-step guide to deploy StockApp directly on a DigitalOcean drople
 
 4. **Note the IP address** - you'll need this for SSH and domain configuration
 
+5. **Configure deployment settings** (on your local machine):
+   ```bash
+   # Run the configuration script
+   ./scripts/init-deploy-config.sh
+   ```
+
+   This will create a `.deploy-config` file with your server details that all deployment scripts will use automatically.
+
 ## 🔐 Step 2: Initial Server Setup
 
 ### 2.1 Connect to Your Droplet
@@ -144,17 +152,18 @@ openssl rand -hex 32
 # This will:
 # - Set up Python virtual environment
 # - Install Python dependencies
-# - Install frontend dependencies
 # - Create database and user
+# Note: Frontend will be uploaded separately from local machine
 ./scripts/setup-app.sh
 ```
 
 The script will:
 - Install Python dependencies using `uv`
-- Install Node.js dependencies
 - Create necessary directories
 - Set up PostgreSQL database and user
 - Update environment variables for localhost
+
+**Note:** Frontend setup is skipped on the server. You'll build and upload it from your local machine (see Step 6.1).
 
 ## 🔧 Step 5: Set Up Systemd Services
 
@@ -184,10 +193,60 @@ This will:
 - Set up rate limiting
 - Enable the site
 
-## 🚀 Step 7: Deploy Application
+## 🚀 Step 7: Build and Upload Frontend
+
+**On your local machine:**
+
+First, configure deployment settings (if not done already):
+
+```bash
+./scripts/init-deploy-config.sh
+```
+
+This will prompt you for:
+- Server IP or hostname (e.g., 167.172.196.213)
+- Server username (default: stocks)
+- Server app path (default: ~/apps/revs_ai)
+- Domain name (optional)
+- SSH key path (optional)
+
+Then build and upload the frontend:
+
+```bash
+# From your local machine (in the project root)
+./scripts/upload-frontend.sh
+```
+
+This script will:
+1. Load settings from `.deploy-config` (or prompt if not configured)
+2. Build the frontend locally (fast on your machine)
+3. Create a compressed archive
+4. Upload it to the server via SCP
+5. Extract it on the server
+
+**Note:** After the first run, the script will remember your server details from `.deploy-config`.
+
+**Alternative: Manual upload**
+
+```bash
+# On local machine
+cd frontend
+npm run build
+tar -czf dist.tar.gz dist/
+
+# Upload
+scp dist.tar.gz stocks@YOUR_SERVER_IP:~/apps/revs_ai/frontend/
+
+# On server, extract
+ssh stocks@YOUR_SERVER_IP
+cd ~/apps/revs_ai/frontend
+tar -xzf dist.tar.gz
+rm dist.tar.gz
+```
+
+## 🚀 Step 8: Deploy Application
 
 Run the deployment script to:
-- Build frontend
 - Run migrations
 - Collect static files
 - Start all services
@@ -198,7 +257,7 @@ Run the deployment script to:
 
 This script will:
 1. Update Python dependencies
-2. Build the frontend
+2. Check for frontend build (should be uploaded)
 3. Run database migrations
 4. Collect static files
 5. Restart all services
@@ -328,53 +387,60 @@ Add:
 
 ## 🔄 Step 13: Updating the Application
 
-After pulling new changes from git:
+### Backend Updates Only
+
+If you only changed backend code:
 
 ```bash
-cd ~/revs_ai
+cd ~/apps/revs_ai
 git pull
-./scripts/deploy.sh
+./scripts/deploy-backend.sh
 ```
 
-The deploy script will automatically:
-- Update dependencies
-- Build frontend
+This will:
+- Update Python dependencies
 - Run migrations
 - Collect static files
 - Restart services
 
-### Fast Deployment (Skip Frontend Build)
+### Frontend Updates
 
-If you haven't changed frontend code, use the fast deployment script:
+If you changed frontend code:
 
+**On your local machine:**
 ```bash
-./scripts/deploy-fast.sh
+# Build and upload frontend
+./scripts/upload-frontend.sh
 ```
 
-This skips the frontend build (which can be slow on smaller droplets) and only updates backend code.
-
-### Building Frontend Locally and Uploading
-
-For faster deployments, you can build the frontend on your local machine and upload it:
-
+**On server:**
 ```bash
-# On your local machine
-cd frontend
-npm run build
-tar -czf dist.tar.gz dist/
-
-# Upload to server
-scp dist.tar.gz stocks@YOUR_DROPLET_IP:~/apps/revs_ai/frontend/
-
-# On server, extract
-cd ~/apps/revs_ai/frontend
-tar -xzf dist.tar.gz
-rm dist.tar.gz
-
-# Then run fast deployment
 cd ~/apps/revs_ai
-./scripts/deploy-fast.sh
+./scripts/deploy.sh
 ```
+
+### Full Update (Backend + Frontend)
+
+**On your local machine:**
+```bash
+# Build and upload frontend
+./scripts/upload-frontend.sh
+```
+
+**On server:**
+```bash
+cd ~/apps/revs_ai
+git pull
+./scripts/deploy.sh
+```
+
+### Quick Reference
+
+| Scenario | Local Machine | Server |
+|----------|--------------|--------|
+| Backend only | - | `git pull && ./scripts/deploy-backend.sh` |
+| Frontend only | `./scripts/upload-frontend.sh` | `./scripts/deploy.sh` |
+| Both | `./scripts/upload-frontend.sh` | `git pull && ./scripts/deploy.sh` |
 
 ## 🛡️ Step 14: Security Hardening
 
@@ -560,6 +626,7 @@ sudo systemctl status redis-server
 
 ### Initial Setup (One Time)
 
+**On Server:**
 ```bash
 # 1. Clone repository
 git clone https://github.com/surenab/revs_ai.git
@@ -571,7 +638,7 @@ cd revs_ai
 # 3. Configure .env.production
 nano .env.production
 
-# 4. Run app setup
+# 4. Run app setup (backend only)
 ./scripts/setup-app.sh
 
 # 5. Set up services
@@ -579,22 +646,55 @@ nano .env.production
 
 # 6. Set up Nginx
 ./scripts/setup-nginx.sh
+```
 
-# 7. Deploy
+**On Local Machine:**
+```bash
+# 7. Build and upload frontend
+cd /path/to/revs_ai
+./scripts/upload-frontend.sh
+```
+
+**Back on Server:**
+```bash
+# 8. Deploy
 ./scripts/deploy.sh
 
-# 8. Set up SSL (if you have domain)
+# 9. Set up SSL (if you have domain)
 sudo certbot --nginx -d your-domain.com
 
-# 9. Create superuser
+# 10. Create superuser
 source .venv/bin/activate
 python manage.py createsuperuser --settings=config.settings.production
 ```
 
 ### Regular Updates
 
+**Backend only:**
 ```bash
-cd ~/revs_ai
+# On server
+cd ~/apps/revs_ai
+git pull
+./scripts/deploy-backend.sh
+```
+
+**Frontend only:**
+```bash
+# On local machine
+./scripts/upload-frontend.sh
+
+# On server
+cd ~/apps/revs_ai
+./scripts/deploy.sh
+```
+
+**Both:**
+```bash
+# On local machine
+./scripts/upload-frontend.sh
+
+# On server
+cd ~/apps/revs_ai
 git pull
 ./scripts/deploy.sh
 ```

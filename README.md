@@ -498,9 +498,14 @@ This section provides a quick overview. For detailed instructions, refer to the 
 
 ### Quick Setup (No Docker)
 
+**On your local machine (first time):**
 ```bash
-# On your DigitalOcean droplet:
+# Configure deployment settings
+./scripts/init-deploy-config.sh
+```
 
+**On your DigitalOcean droplet:**
+```bash
 # 1. Clone repository
 git clone https://github.com/surenab/revs_ai.git
 cd revs_ai
@@ -520,18 +525,50 @@ nano .env.production
 
 # 6. Configure Nginx
 ./scripts/setup-nginx.sh
+```
 
-# 7. Deploy
+**Back on your local machine:**
+```bash
+# 7. Build and upload frontend
+./scripts/upload-frontend.sh
+```
+
+**Back on server:**
+```bash
+# 8. Deploy
 ./scripts/deploy.sh
 
-# 8. Set up SSL (if you have domain)
+# 9. Set up SSL (if you have domain)
 sudo certbot --nginx -d your-domain.com
 ```
 
 ### Updating After Git Pull
 
+**Backend only:**
 ```bash
-cd ~/revs_ai
+# On server
+cd ~/apps/revs_ai
+git pull
+./scripts/deploy-backend.sh
+```
+
+**Frontend only:**
+```bash
+# On local machine
+./scripts/upload-frontend.sh
+
+# On server
+cd ~/apps/revs_ai
+./scripts/deploy.sh
+```
+
+**Both:**
+```bash
+# On local machine
+./scripts/upload-frontend.sh
+
+# On server
+cd ~/apps/revs_ai
 git pull
 ./scripts/deploy.sh
 ```

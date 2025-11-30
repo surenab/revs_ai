@@ -28,12 +28,29 @@ set -a
 source .env.production
 set +a
 
-# Get domain from ALLOWED_HOSTS or prompt
+# Load deployment configuration if available
+if [ -f "$APP_DIR/.deploy-config" ]; then
+    source "$APP_DIR/.deploy-config"
+fi
+
+# Get domain from ALLOWED_HOSTS, deploy config, or prompt
 DOMAIN=$(echo $ALLOWED_HOSTS | cut -d',' -f1 | xargs)
+
+# Use domain from deploy config if available
+if [ -n "$DEPLOY_DOMAIN" ]; then
+    DOMAIN="$DEPLOY_DOMAIN"
+fi
+
 if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "localhost" ] || [ "$DOMAIN" = "127.0.0.1" ]; then
-    read -p "Enter your domain name (or press Enter to use IP): " DOMAIN
-    if [ -z "$DOMAIN" ]; then
-        DOMAIN="_"
+    # Try to use server IP from deploy config
+    if [ -n "$DEPLOY_SERVER" ] && [ "$DEPLOY_SERVER" != "YOUR_SERVER_IP" ]; then
+        DOMAIN="$DEPLOY_SERVER"
+        echo -e "${YELLOW}Using server IP from configuration: ${DOMAIN}${NC}"
+    else
+        read -p "Enter your domain name (or press Enter to use IP): " DOMAIN
+        if [ -z "$DOMAIN" ]; then
+            DOMAIN="_"
+        fi
     fi
 fi
 
