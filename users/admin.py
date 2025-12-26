@@ -15,6 +15,7 @@ class UserAdmin(BaseUserAdmin):
         "email",
         "first_name",
         "last_name",
+        "role",
         "is_active",
         "is_staff",
         "is_verified",
@@ -23,6 +24,7 @@ class UserAdmin(BaseUserAdmin):
 
     # Fields to filter by in the admin sidebar
     list_filter = (
+        "role",
         "is_active",
         "is_staff",
         "is_superuser",
@@ -39,6 +41,13 @@ class UserAdmin(BaseUserAdmin):
 
     # Fields that are read-only
     readonly_fields = ("id", "created_at", "updated_at", "last_login", "last_login_ip")
+
+    def get_readonly_fields(self, request, obj=None):
+        """Make role field read-only for non-staff users."""
+        readonly = list(self.readonly_fields)
+        if not request.user.is_staff:
+            readonly.append("role")
+        return readonly
 
     # Fieldsets for the user detail/edit page
     fieldsets = (
@@ -64,6 +73,7 @@ class UserAdmin(BaseUserAdmin):
                     "is_staff",
                     "is_superuser",
                     "is_verified",
+                    "role",
                     "groups",
                     "user_permissions",
                 ),

@@ -30,6 +30,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("role", "admin")
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError(_("Superuser must have is_staff=True."))
@@ -63,6 +64,19 @@ class User(AbstractUser):
     # Account status fields
     is_verified = models.BooleanField(_("verified"), default=False)
     is_active = models.BooleanField(_("active"), default=True)
+
+    # User role for permissions
+    ROLE_CHOICES = [
+        ("user", _("User")),
+        ("admin", _("Admin")),
+    ]
+    role = models.CharField(
+        _("role"),
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="user",
+        help_text=_("User role determines access permissions"),
+    )
 
     # Timestamps
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
@@ -180,6 +194,15 @@ def save_user_profile(sender, instance, **kwargs):
     """Save the UserProfile when the User is saved."""
     if hasattr(instance, "profile"):
         instance.profile.save()
+
+
+@receiver(post_save, sender=User)
+def set_admin_role_for_staff(sender, instance, **kwargs):
+    """Automatically set role='admin' for Django admin users (is_staff or is_superuser)."""
+    if (instance.is_staff or instance.is_superuser) and instance.role != "admin":
+        instance.role = "admin"
+        # Avoid infinite loop by using update instead of save
+        User.objects.filter(pk=instance.pk).update(role="admin")
 
 
 class SupportRequest(models.Model):

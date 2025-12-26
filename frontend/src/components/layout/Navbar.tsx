@@ -29,7 +29,10 @@ const Navbar: React.FC = () => {
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Stocks", href: "/stocks", icon: TrendingUp },
     { name: "Portfolio", href: "/portfolio", icon: User },
-    { name: "Bots", href: "/trading-bots", icon: Bot },
+    // Only show Bots for admin users
+    ...(user?.role === "admin"
+      ? [{ name: "Bots", href: "/trading-bots", icon: Bot }]
+      : []),
   ];
 
   const handleLogout = async () => {

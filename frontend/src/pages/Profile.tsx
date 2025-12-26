@@ -100,15 +100,28 @@ const Profile: React.FC = () => {
               </h3>
               <p className="text-white/60 mb-4">{user?.email}</p>
 
-              {user?.is_verified ? (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-500/20 text-green-400 border border-green-500/30">
-                  ✓ Verified Account
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-                  ⚠ Unverified Account
-                </span>
-              )}
+              <div className="flex items-center gap-2 mb-4 flex-wrap justify-center">
+                {user?.is_verified ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-500/20 text-green-400 border border-green-500/30">
+                    ✓ Verified Account
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                    ⚠ Unverified Account
+                  </span>
+                )}
+                {user?.role && (
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm border ${
+                      user.role === "admin"
+                        ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+                        : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                    }`}
+                  >
+                    {user.role === "admin" ? "👑 Admin" : "👤 User"}
+                  </span>
+                )}
+              </div>
 
               <div className="mt-6 pt-6 border-t border-white/10">
                 <div className="text-left space-y-3">

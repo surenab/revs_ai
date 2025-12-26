@@ -24,6 +24,7 @@ from .models import (
     TradingBotExecution,
     UserWatchlist,
 )
+from .permissions import IsAdminRole
 from .serializers import (
     BotPerformanceSerializer,
     IntradayPriceListSerializer,
@@ -1394,7 +1395,7 @@ class TradingBotListView(generics.ListCreateAPIView):
     """List user's trading bots or create a new bot."""
 
     serializer_class = TradingBotConfigSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
 
     def get_queryset(self):
         return TradingBotConfig.objects.filter(user=self.request.user)
@@ -1416,7 +1417,7 @@ class TradingBotDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Retrieve, update, or delete a trading bot."""
 
     serializer_class = TradingBotConfigSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
 
     def get_queryset(self):
         return TradingBotConfig.objects.filter(user=self.request.user)
@@ -1446,7 +1447,7 @@ class TradingBotDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
 def activate_bot(request, pk):
     """Activate a trading bot."""
     try:
@@ -1469,7 +1470,7 @@ def activate_bot(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
 def deactivate_bot(request, pk):
     """Deactivate a trading bot."""
     try:
@@ -1492,7 +1493,7 @@ def deactivate_bot(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
 def execute_bot(request, pk):
     """Manually trigger bot execution."""
     try:
@@ -1530,7 +1531,7 @@ class TradingBotExecutionListView(generics.ListAPIView):
     """List bot execution history."""
 
     serializer_class = TradingBotExecutionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
 
     def get_queryset(self):
         bot_id = self.kwargs.get("bot_id")
@@ -1540,7 +1541,7 @@ class TradingBotExecutionListView(generics.ListAPIView):
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
 def bot_performance(request, pk):
     """Get bot performance metrics."""
     try:

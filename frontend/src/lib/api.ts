@@ -56,6 +56,7 @@ export interface User {
   avatar?: string;
   is_verified: boolean;
   is_active: boolean;
+  role: 'user' | 'admin';
   created_at: string;
   updated_at: string;
   profile?: UserProfile;

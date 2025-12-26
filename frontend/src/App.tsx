@@ -10,6 +10,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { WatchlistProvider } from "./contexts/WatchlistContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AdminRoute from "./components/AdminRoute";
 import Layout from "./components/layout/Layout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -73,10 +74,31 @@ function App() {
                 {/* Portfolio route */}
                 <Route path="portfolio" element={<PortfolioPage />} />
 
-                {/* Trading Bots routes */}
-                <Route path="trading-bots" element={<TradingBots />} />
-                <Route path="trading-bots/:id" element={<TradingBotDetail />} />
-                <Route path="trading-bots/:id/edit" element={<EditBot />} />
+                {/* Trading Bots routes - Admin only */}
+                <Route
+                  path="trading-bots"
+                  element={
+                    <AdminRoute>
+                      <TradingBots />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="trading-bots/:id"
+                  element={
+                    <AdminRoute>
+                      <TradingBotDetail />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="trading-bots/:id/edit"
+                  element={
+                    <AdminRoute>
+                      <EditBot />
+                    </AdminRoute>
+                  }
+                />
               </Route>
 
               {/* Catch all route */}
