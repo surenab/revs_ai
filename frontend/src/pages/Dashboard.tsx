@@ -100,18 +100,18 @@ const Dashboard: React.FC = () => {
   const topGainers = marketSummary?.top_gainers.slice(0, 5) || [];
 
   return (
-    <div className="min-h-screen p-6">
+    <div className="min-h-screen p-3 sm:p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-4 sm:mb-6 md:mb-8"
         >
-          <h1 className="text-4xl font-bold text-white mb-2">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2">
             Welcome back, {user?.first_name}! 👋
           </h1>
-          <p className="text-white/70 text-lg">
+          <p className="text-white/70 text-sm sm:text-base md:text-lg">
             Here's what's happening with your investments today.
           </p>
         </motion.div>
@@ -121,7 +121,7 @@ const Dashboard: React.FC = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8"
         >
           {stats.map((stat, index) => {
             const Icon = stat.icon;
@@ -134,23 +134,23 @@ const Dashboard: React.FC = () => {
                 className="card hover:bg-white/15 transition-all duration-300"
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white/60 text-sm font-medium">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/60 text-xs sm:text-sm font-medium truncate">
                       {stat.name}
                     </p>
-                    <p className="text-2xl font-bold text-white mt-1">
+                    <p className="text-xl sm:text-2xl font-bold text-white mt-1">
                       {stat.value}
                     </p>
-                    <div className="flex items-center mt-2">
+                    <div className="flex items-center mt-1 sm:mt-2">
                       {stat.changeType === "increase" ? (
-                        <TrendingUp className="w-4 h-4 text-green-400 mr-1" />
+                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-green-400 mr-1 flex-shrink-0" />
                       ) : stat.changeType === "decrease" ? (
-                        <TrendingDown className="w-4 h-4 text-red-400 mr-1" />
+                        <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4 text-red-400 mr-1 flex-shrink-0" />
                       ) : (
-                        <Activity className="w-4 h-4 text-blue-400 mr-1" />
+                        <Activity className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400 mr-1 flex-shrink-0" />
                       )}
                       <span
-                        className={`text-sm font-medium ${
+                        className={`text-xs sm:text-sm font-medium truncate ${
                           stat.changeType === "increase"
                             ? "text-green-400"
                             : stat.changeType === "decrease"
@@ -162,8 +162,8 @@ const Dashboard: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="p-3 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg">
-                    <Icon className="w-6 h-6 text-white" />
+                  <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg flex-shrink-0 ml-2">
+                    <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
                 </div>
               </motion.div>
@@ -172,7 +172,7 @@ const Dashboard: React.FC = () => {
         </motion.div>
 
         {/* Charts and Tables Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
           {/* Portfolio Chart */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -190,29 +190,30 @@ const Dashboard: React.FC = () => {
             transition={{ delay: 0.3 }}
             className="card"
           >
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-white">Top Gainers</h3>
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-white">Top Gainers</h3>
               <Link
                 to="/stocks"
-                className="text-blue-400 hover:text-blue-300 text-sm font-medium flex items-center space-x-1"
+                className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm font-medium flex items-center space-x-1"
               >
-                <span>View All</span>
+                <span className="hidden sm:inline">View All</span>
+                <span className="sm:hidden">All</span>
                 <ExternalLink className="w-3 h-3" />
               </Link>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2 sm:space-y-3 md:space-y-4">
               {isLoading ? (
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <div key={i} className="animate-pulse">
-                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                        <div className="space-y-2">
-                          <div className="h-4 bg-white/10 rounded w-16"></div>
-                          <div className="h-3 bg-white/5 rounded w-24"></div>
+                      <div className="flex items-center justify-between p-2 sm:p-3 bg-white/5 rounded-lg">
+                        <div className="space-y-1 sm:space-y-2">
+                          <div className="h-3 sm:h-4 bg-white/10 rounded w-12 sm:w-16"></div>
+                          <div className="h-2 sm:h-3 bg-white/5 rounded w-16 sm:w-24"></div>
                         </div>
-                        <div className="space-y-2 text-right">
-                          <div className="h-4 bg-white/10 rounded w-20"></div>
-                          <div className="h-3 bg-white/5 rounded w-16"></div>
+                        <div className="space-y-1 sm:space-y-2 text-right">
+                          <div className="h-3 sm:h-4 bg-white/10 rounded w-14 sm:w-20"></div>
+                          <div className="h-2 sm:h-3 bg-white/5 rounded w-12 sm:w-16"></div>
                         </div>
                       </div>
                     </div>
@@ -225,23 +226,23 @@ const Dashboard: React.FC = () => {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + index * 0.05 }}
-                    className="flex items-center justify-between p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-2 sm:p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
                   >
                     <Link
                       to={`/stocks/${stock.stock_symbol}`}
                       className="flex items-center justify-between w-full"
                     >
-                      <div>
-                        <p className="font-semibold text-white">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-white text-sm sm:text-base truncate">
                           {stock.stock_symbol}
                         </p>
-                        <p className="text-white/60 text-sm">Stock</p>
+                        <p className="text-white/60 text-xs sm:text-sm">Stock</p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-white">
+                      <div className="text-right ml-2 flex-shrink-0">
+                        <p className="font-semibold text-white text-xs sm:text-sm md:text-base">
                           {formatPrice(stock.close_price)}
                         </p>
-                        <p className="text-sm text-green-400">
+                        <p className="text-xs sm:text-sm text-green-400">
                           +{formatPercentage(stock.price_change_percent)}%
                         </p>
                       </div>
@@ -249,9 +250,9 @@ const Dashboard: React.FC = () => {
                   </motion.div>
                 ))
               ) : (
-                <div className="text-center py-8 text-white/60">
-                  <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No market data available</p>
+                <div className="text-center py-6 sm:py-8 text-white/60">
+                  <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm sm:text-base">No market data available</p>
                 </div>
               )}
             </div>
@@ -264,53 +265,54 @@ const Dashboard: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="mt-6 card"
+            className="mt-4 sm:mt-6 card"
           >
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-white flex items-center space-x-2">
-                <Star className="w-5 h-5 text-yellow-500" />
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-white flex items-center space-x-2">
+                <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
                 <span>My Watchlist</span>
               </h3>
               <Link
                 to="/stocks"
-                className="text-blue-400 hover:text-blue-300 text-sm font-medium flex items-center space-x-1"
+                className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm font-medium flex items-center space-x-1"
               >
-                <span>Manage</span>
+                <span className="hidden sm:inline">Manage</span>
+                <span className="sm:hidden">Manage</span>
                 <ExternalLink className="w-3 h-3" />
               </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {dashboardData.watchlist.slice(0, 6).map((item, index) => (
                 <motion.div
                   key={item.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 + index * 0.05 }}
-                  className="bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-colors"
+                  className="bg-white/5 rounded-lg p-3 sm:p-4 hover:bg-white/10 transition-colors"
                 >
                   <Link to={`/stocks/${item.stock.symbol}`} className="block">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-semibold text-white">
+                    <div className="flex items-center justify-between mb-1 sm:mb-2">
+                      <h4 className="font-semibold text-white text-sm sm:text-base truncate flex-1 min-w-0">
                         {item.stock.symbol}
                       </h4>
                       {item.target_price && (
-                        <div className="flex items-center space-x-1 text-xs text-white/60">
-                          <span>Target:</span>
+                        <div className="flex items-center space-x-1 text-xs text-white/60 ml-2 flex-shrink-0">
+                          <span className="hidden sm:inline">Target:</span>
                           <span>{formatPrice(item.target_price)}</span>
                         </div>
                       )}
                     </div>
-                    <p className="text-sm text-white/60 mb-3 line-clamp-1">
+                    <p className="text-xs sm:text-sm text-white/60 mb-2 sm:mb-3 line-clamp-1">
                       {item.stock.name}
                     </p>
 
                     {item.latest_price && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-lg font-semibold text-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-base sm:text-lg font-semibold text-white truncate">
                           {formatPrice(item.latest_price.close_price)}
                         </span>
                         <div
-                          className={`flex items-center space-x-1 text-sm ${
+                          className={`flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0 ${
                             item.latest_price.price_change >= 0
                               ? "text-green-400"
                               : "text-red-400"

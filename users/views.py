@@ -5,6 +5,7 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.translation import gettext_lazy as _
@@ -13,8 +14,9 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import User
+from .models import Notification, User
 from .serializers import (
+    NotificationSerializer,
     PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetSerializer,
@@ -149,6 +151,14 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             serializer.save()
 
+            # Create notification
+            create_notification(
+                user=request.user,
+                notification_type="profile_updated",
+                title="Profile Updated",
+                message="Your profile has been updated successfully.",
+            )
+
             # Return updated user data
             user_serializer = UserSerializer(request.user)
             return Response(
@@ -167,6 +177,14 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        # Create notification
+        create_notification(
+            user=request.user,
+            notification_type="password_changed",
+            title="Password Changed",
+            message="Your password has been changed successfully. Please login again.",
+        )
 
         # Delete all tokens to force re-login
         Token.objects.filter(user=request.user).delete()
@@ -314,3 +332,59 @@ def create_support_request(request):
             status=status.HTTP_201_CREATED,
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Notification helper function
+def create_notification(
+    user,
+    notification_type,
+    title,
+    message,
+    related_object_type=None,
+    related_object_id=None,
+    metadata=None,
+):
+    """Helper function to create a notification for a user."""
+    return Notification.objects.create(
+        user=user,
+        type=notification_type,
+        title=title,
+        message=message,
+        related_object_type=related_object_type,
+        related_object_id=related_object_id,
+        metadata=metadata or {},
+    )
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing user notifications."""
+
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Return notifications for the current user."""
+        return Notification.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=["get"])
+    def unread_count(self, request):
+        """Get count of unread notifications."""
+        count = Notification.objects.filter(user=request.user, is_read=False).count()
+        return Response({"count": count})
+
+    @action(detail=True, methods=["post"])
+    def mark_read(self, request, pk=None):
+        """Mark a notification as read."""
+        notification = self.get_object()
+        notification.mark_as_read()
+        return Response({"message": _("Notification marked as read")})
+
+    @action(detail=False, methods=["post"])
+    def mark_all_read(self, request):
+        """Mark all notifications as read for the current user."""
+        updated = Notification.objects.filter(user=request.user, is_read=False).update(
+            is_read=True, read_at=timezone.now()
+        )
+        return Response(
+            {"message": _("All notifications marked as read"), "updated": updated}
+        )

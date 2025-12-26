@@ -11,10 +11,21 @@ from .models import (
     StockAlert,
     StockPrice,
     StockTick,
+    TradingBotConfig,
+    TradingBotExecution,
     UserWatchlist,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class StockListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for stock lists (id, symbol, name only)."""
+
+    class Meta:
+        model = Stock
+        fields = ["id", "symbol", "name"]
+        read_only_fields = ["id", "symbol", "name"]
 
 
 class StockSerializer(serializers.ModelSerializer):
@@ -868,3 +879,178 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 logger.info(f"Order executed successfully for {order.stock.symbol}")
 
         return order
+
+
+class TradingBotConfigSerializer(serializers.ModelSerializer):
+    """Serializer for TradingBotConfig model."""
+
+    assigned_stocks = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Stock.objects.all(), required=True
+    )
+    budget_portfolio = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Portfolio.objects.all(), required=False, allow_empty=True
+    )
+
+    class Meta:
+        model = TradingBotConfig
+        fields = [
+            "id",
+            "user",
+            "name",
+            "is_active",
+            "budget_type",
+            "budget_cash",
+            "budget_portfolio",
+            "assigned_stocks",
+            "max_position_size",
+            "max_daily_trades",
+            "max_daily_loss",
+            "risk_per_trade",
+            "stop_loss_percent",
+            "take_profit_percent",
+            "enabled_indicators",
+            "enabled_patterns",
+            "buy_rules",
+            "sell_rules",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "user", "created_at", "updated_at"]
+
+    def validate(self, data):
+        """Validate bot configuration."""
+        budget_type = data.get("budget_type", "cash")
+
+        if budget_type == "cash" and not data.get("budget_cash"):
+            raise serializers.ValidationError(
+                {"budget_cash": "Cash budget is required when budget_type is 'cash'"}
+            )
+
+        if budget_type == "portfolio" and not data.get("budget_portfolio"):
+            raise serializers.ValidationError(
+                {
+                    "budget_portfolio": "Portfolio positions are required when budget_type is 'portfolio'"
+                }
+            )
+
+        # Check if portfolio positions are already assigned to other bots
+        budget_portfolio = data.get("budget_portfolio", [])
+        if budget_portfolio:
+            instance = self.instance  # For updates, this will be the current bot
+            # Get user from instance (for updates) or from request context (for creates)
+            user = None
+            if instance:
+                user = instance.user
+            elif self.context and "request" in self.context:
+                user = self.context["request"].user
+
+            if user:
+                # Get all bots for this user (excluding current bot if updating)
+                other_bots = TradingBotConfig.objects.filter(user=user)
+                if instance:
+                    other_bots = other_bots.exclude(id=instance.id)
+
+                # Check which portfolio positions are already assigned
+                assigned_positions = set()
+                for bot in other_bots:
+                    assigned_positions.update(
+                        bot.budget_portfolio.values_list("id", flat=True)
+                    )
+
+                # Check if any of the requested positions are already assigned
+                requested_position_ids = {pos.id for pos in budget_portfolio}
+                conflicting_positions = requested_position_ids & assigned_positions
+
+                if conflicting_positions:
+                    # Get portfolio position details for error message
+                    from .models import Portfolio
+
+                    conflicting_portfolios = Portfolio.objects.filter(
+                        id__in=conflicting_positions
+                    )
+                    portfolio_details = [
+                        f"{p.stock.symbol} ({p.quantity} shares)"
+                        for p in conflicting_portfolios
+                    ]
+                    raise serializers.ValidationError(
+                        {
+                            "budget_portfolio": f"Portfolio position(s) already assigned to another bot: {', '.join(portfolio_details)}"
+                        }
+                    )
+
+        assigned_stocks = data.get("assigned_stocks", [])
+        if not assigned_stocks:
+            raise serializers.ValidationError(
+                {"assigned_stocks": "At least one stock must be assigned to the bot"}
+            )
+
+        return data
+
+    def create(self, validated_data):
+        """Create bot configuration."""
+        assigned_stocks = validated_data.pop("assigned_stocks", [])
+        budget_portfolio = validated_data.pop("budget_portfolio", [])
+
+        bot_config = TradingBotConfig.objects.create(**validated_data)
+
+        # Set many-to-many relationships
+        bot_config.assigned_stocks.set(assigned_stocks)
+        if budget_portfolio:
+            bot_config.budget_portfolio.set(budget_portfolio)
+
+        return bot_config
+
+    def update(self, instance, validated_data):
+        """Update bot configuration."""
+        assigned_stocks = validated_data.pop("assigned_stocks", None)
+        budget_portfolio = validated_data.pop("budget_portfolio", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if assigned_stocks is not None:
+            instance.assigned_stocks.set(assigned_stocks)
+
+        if budget_portfolio is not None:
+            instance.budget_portfolio.set(budget_portfolio)
+
+        return instance
+
+
+class TradingBotExecutionSerializer(serializers.ModelSerializer):
+    """Serializer for TradingBotExecution model."""
+
+    bot_config_name = serializers.CharField(source="bot_config.name", read_only=True)
+    stock_symbol = serializers.CharField(source="stock.symbol", read_only=True)
+
+    class Meta:
+        model = TradingBotExecution
+        fields = [
+            "id",
+            "bot_config",
+            "bot_config_name",
+            "stock",
+            "stock_symbol",
+            "action",
+            "reason",
+            "indicators_data",
+            "patterns_detected",
+            "risk_score",
+            "executed_order",
+            "timestamp",
+        ]
+        read_only_fields = ["id", "timestamp"]
+
+
+class BotPerformanceSerializer(serializers.Serializer):
+    """Serializer for bot performance metrics."""
+
+    bot_id = serializers.UUIDField()
+    bot_name = serializers.CharField()
+    total_trades = serializers.IntegerField()
+    successful_trades = serializers.IntegerField()
+    total_profit_loss = serializers.DecimalField(max_digits=15, decimal_places=2)
+    win_rate = serializers.DecimalField(max_digits=5, decimal_places=2)
+    average_profit = serializers.DecimalField(max_digits=15, decimal_places=2)
+    average_loss = serializers.DecimalField(max_digits=15, decimal_places=2)

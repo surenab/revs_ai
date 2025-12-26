@@ -1,0 +1,15 @@
+# Deployment Configuration
+# This file stores deployment settings used by deployment scripts
+# Update these values for your server
+# Or run: ./scripts/init-deploy-config.sh to set up interactively
+
+# Server connection details
+DEPLOY_SERVER=167.172.196.213
+DEPLOY_USER=stocks
+DEPLOY_PATH=~/apps/revs_ai
+
+# Domain (optional - leave empty if using IP)
+DEPLOY_DOMAIN=
+
+# SSH key path (optional - leave empty to use default)
+DEPLOY_SSH_KEY=

@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
 import { type User, authAPI, userAPI } from "../lib/api";
@@ -39,6 +40,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!localStorage.getItem("token");
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await userAPI.getProfile();
+      const userData = response.data;
+
+      localStorage.setItem("user", JSON.stringify(userData));
+      setUser(userData);
+    } catch (error) {
+      console.error("Failed to refresh user:", error);
+      throw error;
+    }
+  }, []);
+
   // Initialize auth state
   useEffect(() => {
     const initializeAuth = async () => {
@@ -47,11 +61,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (token && savedUser) {
         try {
-          setUser(JSON.parse(savedUser));
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
           // Verify token is still valid by fetching user profile
-          await refreshUser();
+          try {
+            await refreshUser();
+          } catch (error) {
+            console.error("Token validation failed:", error);
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            setUser(null);
+          }
         } catch (error) {
-          console.error("Token validation failed:", error);
+          console.error("Failed to parse saved user:", error);
           localStorage.removeItem("token");
           localStorage.removeItem("user");
           setUser(null);
@@ -61,7 +83,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     initializeAuth();
-  }, []);
+  }, [refreshUser]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -137,19 +159,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         error.response?.data?.detail ||
         "Failed to update profile.";
       toast.error(message);
-      throw error;
-    }
-  };
-
-  const refreshUser = async () => {
-    try {
-      const response = await userAPI.getProfile();
-      const userData = response.data;
-
-      localStorage.setItem("user", JSON.stringify(userData));
-      setUser(userData);
-    } catch (error) {
-      console.error("Failed to refresh user:", error);
       throw error;
     }
   };

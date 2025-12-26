@@ -9,15 +9,18 @@ import {
   LogOut,
   Home,
   TrendingUp,
-  Bell,
   Search,
+  Bot,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import Avatar from "../common/Avatar";
+import NotificationDropdown from "../common/NotificationDropdown";
+import SpotlightSearch from "../common/SpotlightSearch";
 
 const Navbar: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const { user, logout, isAuthenticated } = useAuth();
   const location = useLocation();
   const profileDropdownRef = useRef<HTMLDivElement>(null);
@@ -26,6 +29,7 @@ const Navbar: React.FC = () => {
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Stocks", href: "/stocks", icon: TrendingUp },
     { name: "Portfolio", href: "/portfolio", icon: User },
+    { name: "Bots", href: "/trading-bots", icon: Bot },
   ];
 
   const handleLogout = async () => {
@@ -55,8 +59,10 @@ const Navbar: React.FC = () => {
 
   // Close mobile menu when clicking outside or on route change
   useEffect(() => {
-    setIsMenuOpen(false);
-  }, [location.pathname]);
+    if (isMenuOpen) {
+      setIsMenuOpen(false);
+    }
+  }, [location.pathname, isMenuOpen]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -71,6 +77,24 @@ const Navbar: React.FC = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isMenuOpen]);
+
+  // Keyboard shortcut for search (Cmd/Ctrl + K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        if (isAuthenticated) {
+          setIsSearchOpen((prev) => !prev);
+        }
+      }
+      if (e.key === "Escape" && isSearchOpen) {
+        setIsSearchOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAuthenticated, isSearchOpen]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-900/90 backdrop-blur-md border-b border-white/10">
@@ -122,20 +146,21 @@ const Navbar: React.FC = () => {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsSearchOpen(true)}
                   className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/20 transition-all duration-200"
+                  title="Search stocks (⌘K)"
                 >
                   <Search className="w-5 h-5" />
                 </motion.button>
 
+                {/* Spotlight Search */}
+                <SpotlightSearch
+                  isOpen={isSearchOpen}
+                  onClose={() => setIsSearchOpen(false)}
+                />
+
                 {/* Notifications */}
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/20 transition-all duration-200 relative"
-                >
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-                </motion.button>
+                <NotificationDropdown />
 
                 {/* Profile Dropdown */}
                 <div className="relative" ref={profileDropdownRef}>

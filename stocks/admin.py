@@ -9,6 +9,8 @@ from .models import (
     StockAlert,
     StockPrice,
     StockTick,
+    TradingBotConfig,
+    TradingBotExecution,
     UserWatchlist,
 )
 
@@ -556,3 +558,247 @@ class OrderAdmin(admin.ModelAdmin):
         self.message_user(request, f"{count} orders were successfully executed.")
 
     retry_execution.short_description = "Retry execution for selected orders"
+
+
+@admin.register(TradingBotConfig)
+class TradingBotConfigAdmin(admin.ModelAdmin):
+    list_display = [
+        "name",
+        "user_email",
+        "is_active_display",
+        "budget_type",
+        "budget_display",
+        "assigned_stocks_count",
+        "max_daily_trades",
+        "risk_per_trade",
+        "created_at",
+    ]
+    list_filter = [
+        "is_active",
+        "budget_type",
+        "created_at",
+        "updated_at",
+    ]
+    search_fields = [
+        "name",
+        "user__email",
+        "user__username",
+        "assigned_stocks__symbol",
+        "assigned_stocks__name",
+    ]
+    readonly_fields = [
+        "id",
+        "created_at",
+        "updated_at",
+    ]
+    date_hierarchy = "created_at"
+    ordering = ["-created_at"]
+    filter_horizontal = ["assigned_stocks", "budget_portfolio"]
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {"fields": ("user", "name", "is_active")},
+        ),
+        (
+            "Budget Configuration",
+            {
+                "fields": (
+                    "budget_type",
+                    "budget_cash",
+                    "budget_portfolio",
+                )
+            },
+        ),
+        (
+            "Stock Assignment",
+            {"fields": ("assigned_stocks",)},
+        ),
+        (
+            "Risk Management",
+            {
+                "fields": (
+                    "max_position_size",
+                    "max_daily_trades",
+                    "max_daily_loss",
+                    "risk_per_trade",
+                    "stop_loss_percent",
+                    "take_profit_percent",
+                )
+            },
+        ),
+        (
+            "Trading Rules",
+            {
+                "fields": (
+                    "enabled_indicators",
+                    "enabled_patterns",
+                    "buy_rules",
+                    "sell_rules",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Metadata",
+            {"fields": ("id", "created_at", "updated_at"), "classes": ("collapse",)},
+        ),
+    )
+
+    def user_email(self, obj):
+        return obj.user.email
+
+    user_email.short_description = "User"
+    user_email.admin_order_field = "user__email"
+
+    def is_active_display(self, obj):
+        if obj.is_active:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">● Active</span>'
+            )
+        return format_html(
+            '<span style="color: gray; font-weight: bold;">○ Inactive</span>'
+        )
+
+    is_active_display.short_description = "Status"
+    is_active_display.admin_order_field = "is_active"
+
+    def budget_display(self, obj):
+        if obj.budget_type == "cash":
+            if obj.budget_cash:
+                return f"${obj.budget_cash:,.2f}"
+            return "-"
+        portfolio_count = obj.budget_portfolio.count()
+        return f"{portfolio_count} position{'s' if portfolio_count != 1 else ''}"
+
+    budget_display.short_description = "Budget"
+    budget_display.admin_order_field = "budget_cash"
+
+    def assigned_stocks_count(self, obj):
+        count = obj.assigned_stocks.count()
+        return f"{count} stock{'s' if count != 1 else ''}"
+
+    assigned_stocks_count.short_description = "Assigned Stocks"
+    assigned_stocks_count.admin_order_field = "assigned_stocks"
+
+    actions = ["activate_bots", "deactivate_bots"]
+
+    def activate_bots(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"{updated} bot(s) were successfully activated.")
+
+    activate_bots.short_description = "Activate selected bots"
+
+    def deactivate_bots(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f"{updated} bot(s) were successfully deactivated.")
+
+    deactivate_bots.short_description = "Deactivate selected bots"
+
+
+@admin.register(TradingBotExecution)
+class TradingBotExecutionAdmin(admin.ModelAdmin):
+    list_display = [
+        "bot_config_name",
+        "user_email",
+        "stock_symbol",
+        "action_display",
+        "risk_score",
+        "has_order",
+        "timestamp",
+    ]
+    list_filter = [
+        "action",
+        "timestamp",
+        "bot_config__is_active",
+        "bot_config__budget_type",
+        "stock__exchange",
+    ]
+    search_fields = [
+        "bot_config__name",
+        "bot_config__user__email",
+        "stock__symbol",
+        "stock__name",
+        "reason",
+    ]
+    readonly_fields = [
+        "id",
+        "timestamp",
+        "indicators_data",
+        "patterns_detected",
+    ]
+    date_hierarchy = "timestamp"
+    ordering = ["-timestamp"]
+
+    fieldsets = (
+        (
+            "Execution Information",
+            {
+                "fields": (
+                    "bot_config",
+                    "stock",
+                    "action",
+                    "timestamp",
+                )
+            },
+        ),
+        (
+            "Decision Details",
+            {"fields": ("reason", "risk_score")},
+        ),
+        (
+            "Market Data Snapshot",
+            {
+                "fields": ("indicators_data", "patterns_detected"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Order Execution",
+            {"fields": ("executed_order",), "classes": ("collapse",)},
+        ),
+        (
+            "Metadata",
+            {"fields": ("id",), "classes": ("collapse",)},
+        ),
+    )
+
+    def bot_config_name(self, obj):
+        return obj.bot_config.name
+
+    bot_config_name.short_description = "Bot"
+    bot_config_name.admin_order_field = "bot_config__name"
+
+    def user_email(self, obj):
+        return obj.bot_config.user.email
+
+    user_email.short_description = "User"
+    user_email.admin_order_field = "bot_config__user__email"
+
+    def stock_symbol(self, obj):
+        return obj.stock.symbol
+
+    stock_symbol.short_description = "Stock"
+    stock_symbol.admin_order_field = "stock__symbol"
+
+    def action_display(self, obj):
+        colors = {
+            "buy": "green",
+            "sell": "red",
+            "skip": "gray",
+        }
+        color = colors.get(obj.action, "black")
+        return format_html(
+            f'<span style="color: {color}; font-weight: bold;">{obj.get_action_display()}</span>'
+        )
+
+    action_display.short_description = "Action"
+    action_display.admin_order_field = "action"
+
+    def has_order(self, obj):
+        if obj.executed_order:
+            return format_html('<span style="color: green;">✓ Yes</span>')
+        return format_html('<span style="color: gray;">✗ No</span>')
+
+    has_order.short_description = "Order Created"
+    has_order.admin_order_field = "executed_order"

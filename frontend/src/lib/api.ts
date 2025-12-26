@@ -313,8 +313,13 @@ export const stockAPI = {
     exchange?: string;
     sector?: string;
     page?: number;
+    page_size?: number;
   }): Promise<AxiosResponse<{ count: number; results: Stock[] }>> =>
     api.get('/stocks/stocks/', { params }),
+
+  // Get all stocks (lightweight - id, symbol, name only) for dropdowns
+  getAllStocks: (): Promise<AxiosResponse<Stock[]>> =>
+    api.get('/stocks/stocks/all/'),
 
   // Get stock details
   getStock: (symbol: string): Promise<AxiosResponse<Stock>> =>
@@ -628,6 +633,163 @@ export const orderAPI = {
   // Get order summary
   getOrderSummary: (): Promise<AxiosResponse<OrderSummary>> =>
     api.get('/stocks/orders/summary/'),
+};
+
+// Trading Bot Types
+export interface TradingBotConfig {
+  id: string;
+  user: string;
+  user_details?: {
+    id: number;
+    email: string;
+    full_name: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  name: string;
+  is_active: boolean;
+  budget_type: 'cash' | 'portfolio';
+  budget_cash?: number;
+  budget_portfolio?: string[];
+  assigned_stocks: string[];
+  max_position_size?: number;
+  max_daily_trades?: number;
+  max_daily_loss?: number;
+  risk_per_trade: number;
+  stop_loss_percent?: number;
+  take_profit_percent?: number;
+  enabled_indicators: Record<string, any>;
+  enabled_patterns: Record<string, any>;
+  buy_rules: Record<string, any>;
+  sell_rules: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TradingBotExecution {
+  id: string;
+  bot_config: string;
+  bot_config_name: string;
+  stock: string;
+  stock_symbol: string;
+  action: 'buy' | 'sell' | 'skip';
+  reason: string;
+  indicators_data: Record<string, any>;
+  patterns_detected: Record<string, any>;
+  risk_score?: number;
+  executed_order?: string;
+  timestamp: string;
+}
+
+export interface BotPerformance {
+  bot_id: string;
+  bot_name: string;
+  total_trades: number;
+  successful_trades: number;
+  total_profit_loss: number;
+  win_rate: number;
+  average_profit: number;
+  average_loss: number;
+}
+
+export interface BotCreateRequest {
+  name: string;
+  budget_type: 'cash' | 'portfolio';
+  budget_cash?: number;
+  budget_portfolio?: string[];
+  assigned_stocks: string[];
+  max_position_size?: number;
+  max_daily_trades?: number;
+  max_daily_loss?: number;
+  risk_per_trade: number;
+  stop_loss_percent?: number;
+  take_profit_percent?: number;
+  enabled_indicators?: Record<string, any>;
+  enabled_patterns?: Record<string, any>;
+  buy_rules?: Record<string, any>;
+  sell_rules?: Record<string, any>;
+}
+
+// Notification Types
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  related_object_type?: string;
+  related_object_id?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  read_at?: string;
+}
+
+export const notificationAPI = {
+  getNotifications: async (params?: { page?: number; page_size?: number; is_read?: boolean }): Promise<AxiosResponse<{ count: number; results: Notification[] } | Notification[]>> => {
+    return api.get('/users/notifications/', { params });
+  },
+  getUnreadCount: async (): Promise<AxiosResponse<{ count: number }>> => {
+    return api.get('/users/notifications/unread_count/');
+  },
+  markAsRead: async (id: string): Promise<AxiosResponse<{ message: string }>> => {
+    return api.post(`/users/notifications/${id}/mark_read/`);
+  },
+  markAllAsRead: async (): Promise<AxiosResponse<{ message: string; updated: number }>> => {
+    return api.post('/users/notifications/mark_all_read/');
+  },
+  deleteNotification: async (id: string): Promise<AxiosResponse<void>> => {
+    return api.delete(`/users/notifications/${id}/`);
+  },
+};
+
+export const botAPI = {
+  // Get user's trading bots
+  getBots: (): Promise<AxiosResponse<{ count: number; results: TradingBotConfig[] } | TradingBotConfig[]>> =>
+    api.get('/stocks/bots/'),
+
+  // Create trading bot
+  createBot: (data: BotCreateRequest): Promise<AxiosResponse<TradingBotConfig>> =>
+    api.post('/stocks/bots/', data),
+
+  // Get bot details
+  getBot: (id: string): Promise<AxiosResponse<TradingBotConfig>> =>
+    api.get(`/stocks/bots/${id}/`),
+
+  // Update bot
+  updateBot: (id: string, data: Partial<BotCreateRequest>): Promise<AxiosResponse<TradingBotConfig>> =>
+    api.put(`/stocks/bots/${id}/`, data),
+
+  // Delete bot
+  deleteBot: (id: string): Promise<AxiosResponse<void>> =>
+    api.delete(`/stocks/bots/${id}/`),
+
+  // Activate bot
+  activateBot: (id: string): Promise<AxiosResponse<TradingBotConfig>> =>
+    api.post(`/stocks/bots/${id}/activate/`),
+
+  // Deactivate bot
+  deactivateBot: (id: string): Promise<AxiosResponse<TradingBotConfig>> =>
+    api.post(`/stocks/bots/${id}/deactivate/`),
+
+  // Manually execute bot
+  executeBot: (id: string): Promise<AxiosResponse<{
+    bot_id: string;
+    bot_name: string;
+    timestamp: string;
+    stocks_analyzed: string[];
+    buy_signals: Array<{ stock: string; reason: string; risk_score?: number }>;
+    sell_signals: Array<{ stock: string; reason: string; risk_score?: number }>;
+    skipped: Array<{ stock: string; reason: string }>;
+  }>> =>
+    api.post(`/stocks/bots/${id}/execute/`),
+
+  // Get bot execution history
+  getBotExecutions: (botId: string): Promise<AxiosResponse<TradingBotExecution[]>> =>
+    api.get(`/stocks/bots/${botId}/executions/`),
+
+  // Get bot performance
+  getBotPerformance: (id: string): Promise<AxiosResponse<BotPerformance>> =>
+    api.get(`/stocks/bots/${id}/performance/`),
 };
 
 // Utility function to convert relative media URLs to absolute backend URLs

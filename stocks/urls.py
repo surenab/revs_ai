@@ -7,6 +7,7 @@ app_name = "stocks"
 urlpatterns = [
     # Stock endpoints
     path("stocks/", views.StockListView.as_view(), name="stock-list"),
+    path("stocks/all/", views.AllStocksListView.as_view(), name="all-stocks-list"),
     path("stocks/<str:symbol>/", views.StockDetailView.as_view(), name="stock-detail"),
     path(
         "stocks/<str:symbol>/timeseries/",
@@ -63,4 +64,16 @@ urlpatterns = [
     path("orders/<uuid:pk>/", views.OrderDetailView.as_view(), name="order-detail"),
     path("orders/execute/", views.execute_orders, name="execute-orders"),
     path("orders/summary/", views.order_summary, name="order-summary"),
+    # Trading bot endpoints
+    path("bots/", views.TradingBotListView.as_view(), name="bot-list"),
+    path("bots/<uuid:pk>/", views.TradingBotDetailView.as_view(), name="bot-detail"),
+    path("bots/<uuid:pk>/activate/", views.activate_bot, name="bot-activate"),
+    path("bots/<uuid:pk>/deactivate/", views.deactivate_bot, name="bot-deactivate"),
+    path("bots/<uuid:pk>/execute/", views.execute_bot, name="bot-execute"),
+    path(
+        "bots/<uuid:bot_id>/executions/",
+        views.TradingBotExecutionListView.as_view(),
+        name="bot-executions",
+    ),
+    path("bots/<uuid:pk>/performance/", views.bot_performance, name="bot-performance"),
 ]

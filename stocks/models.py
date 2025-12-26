@@ -8,6 +8,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ class Stock(models.Model):
     is_active = models.BooleanField(_("active"), default=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    # History tracking
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _("Stock")
@@ -239,6 +243,8 @@ class UserWatchlist(models.Model):
     # Timestamps
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _("User Watchlist")
@@ -556,6 +562,7 @@ class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
     stock = models.ForeignKey(Stock, on_delete=models.CASCADE, related_name="orders")
+    history = HistoricalRecords()
 
     # Order details
     transaction_type = models.CharField(
@@ -618,6 +625,17 @@ class Order(models.Model):
     # Notes
     notes = models.TextField(
         _("notes"), blank=True, help_text=_("Personal notes about this order")
+    )
+
+    # Bot reference (if order was created by a trading bot)
+    # Note: Using string reference to avoid forward reference issues
+    bot_config = models.ForeignKey(
+        "TradingBotConfig",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+        help_text=_("Trading bot that created this order"),
     )
 
     # Timestamps
@@ -869,6 +887,9 @@ class Portfolio(models.Model):
             models.Index(fields=["user", "stock"]),
         ]
 
+    # History tracking
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"{self.user.email} - {self.stock.symbol} ({self.quantity} shares)"
 
@@ -896,3 +917,245 @@ class Portfolio(models.Model):
         if self.total_cost > 0:
             return (self.gain_loss / self.total_cost) * 100
         return Decimal("0.00")
+
+
+class TradingBotConfig(models.Model):
+    """
+    Model for trading bot configuration.
+    """
+
+    BUDGET_TYPE_CHOICES = [
+        ("cash", _("Cash Budget")),
+        ("portfolio", _("Portfolio Budget")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="trading_bots"
+    )
+    name = models.CharField(
+        _("name"), max_length=200, help_text=_("Bot name/identifier")
+    )
+    is_active = models.BooleanField(
+        _("active"), default=False, help_text=_("Is bot active")
+    )
+
+    # Budget configuration
+    budget_type = models.CharField(
+        _("budget type"),
+        max_length=20,
+        choices=BUDGET_TYPE_CHOICES,
+        default="cash",
+        help_text=_("Type of budget assignment: cash or portfolio"),
+    )
+    budget_cash = models.DecimalField(
+        _("budget cash"),
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Cash budget amount (if budget_type is 'cash')"),
+    )
+    budget_portfolio = models.ManyToManyField(
+        Portfolio,
+        related_name="bot_configs",
+        blank=True,
+        help_text=_(
+            "Existing portfolio positions assigned to bot (if budget_type is 'portfolio')"
+        ),
+    )
+
+    # Stock assignment
+    assigned_stocks = models.ManyToManyField(
+        Stock,
+        related_name="bot_configs",
+        help_text=_("Stock symbols in which bot can operate (REQUIRED)"),
+    )
+
+    # Risk management
+    max_position_size = models.DecimalField(
+        _("max position size"),
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.0001"))],
+        help_text=_("Maximum position size per trade"),
+    )
+    max_daily_trades = models.IntegerField(
+        _("max daily trades"),
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=_("Maximum trades per day"),
+    )
+    max_daily_loss = models.DecimalField(
+        _("max daily loss"),
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Maximum loss threshold per day"),
+    )
+    risk_per_trade = models.DecimalField(
+        _("risk per trade"),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("2.00"),
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text=_("Risk percentage per trade (0.01-100)"),
+    )
+    stop_loss_percent = models.DecimalField(
+        _("stop loss percent"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text=_("Stop loss percentage (0.01-100)"),
+    )
+    take_profit_percent = models.DecimalField(
+        _("take profit percent"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text=_("Take profit percentage (0.01-100)"),
+    )
+
+    # Trading rules
+    enabled_indicators = models.JSONField(
+        _("enabled indicators"),
+        default=dict,
+        blank=True,
+        help_text=_("Indicator configurations (JSON)"),
+    )
+    enabled_patterns = models.JSONField(
+        _("enabled patterns"),
+        default=dict,
+        blank=True,
+        help_text=_("Pattern configurations (JSON)"),
+    )
+    buy_rules = models.JSONField(
+        _("buy rules"),
+        default=dict,
+        blank=True,
+        help_text=_("Buy condition rules (JSON)"),
+    )
+    sell_rules = models.JSONField(
+        _("sell rules"),
+        default=dict,
+        blank=True,
+        help_text=_("Sell condition rules (JSON)"),
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Trading Bot Config")
+        verbose_name_plural = _("Trading Bot Configs")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "is_active"]),
+            models.Index(fields=["is_active", "created_at"]),
+        ]
+
+    # History tracking
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.user.email} - {self.name} ({'Active' if self.is_active else 'Inactive'})"
+
+    def clean(self):
+        """Validate bot configuration."""
+        from django.core.exceptions import ValidationError
+
+        if self.budget_type == "cash" and not self.budget_cash:
+            raise ValidationError(
+                _("Cash budget is required when budget_type is 'cash'")
+            )
+        if self.budget_type == "portfolio" and not self.budget_portfolio.exists():
+            raise ValidationError(
+                _("Portfolio positions are required when budget_type is 'portfolio'")
+            )
+        if not self.assigned_stocks.exists():
+            raise ValidationError(_("At least one stock must be assigned to the bot"))
+
+
+class TradingBotExecution(models.Model):
+    """
+    Model for tracking trading bot execution history.
+    """
+
+    ACTION_CHOICES = [
+        ("buy", _("Buy")),
+        ("sell", _("Sell")),
+        ("skip", _("Skip")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bot_config = models.ForeignKey(
+        TradingBotConfig,
+        on_delete=models.CASCADE,
+        related_name="executions",
+    )
+    stock = models.ForeignKey(
+        Stock, on_delete=models.CASCADE, related_name="bot_executions"
+    )
+    action = models.CharField(
+        _("action"),
+        max_length=10,
+        choices=ACTION_CHOICES,
+        help_text=_("Action taken by bot: buy, sell, or skip"),
+    )
+    reason = models.TextField(
+        _("reason"), blank=True, help_text=_("Why the decision was made")
+    )
+    indicators_data = models.JSONField(
+        _("indicators data"),
+        default=dict,
+        blank=True,
+        help_text=_("Snapshot of indicators at decision time"),
+    )
+    patterns_detected = models.JSONField(
+        _("patterns detected"),
+        default=dict,
+        blank=True,
+        help_text=_("Patterns found at decision time"),
+    )
+    risk_score = models.DecimalField(
+        _("risk score"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Calculated risk score (0-100)"),
+    )
+    executed_order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bot_executions",
+        help_text=_("Order created if trade was executed"),
+    )
+    timestamp = models.DateTimeField(_("timestamp"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Trading Bot Execution")
+        verbose_name_plural = _("Trading Bot Executions")
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["bot_config", "timestamp"]),
+            models.Index(fields=["stock", "timestamp"]),
+            models.Index(fields=["action", "timestamp"]),
+        ]
+
+    def __str__(self):
+        return f"{self.bot_config.name} - {self.stock.symbol} - {self.get_action_display()} @ {self.timestamp}"

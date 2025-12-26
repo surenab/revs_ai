@@ -8,6 +8,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
 
 class UserManager(BaseUserManager):
@@ -75,6 +76,9 @@ class User(AbstractUser):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    # History tracking
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _("User")
@@ -152,6 +156,9 @@ class UserProfile(models.Model):
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
+    # History tracking
+    history = HistoricalRecords()
+
     class Meta:
         verbose_name = _("User Profile")
         verbose_name_plural = _("User Profiles")
@@ -224,6 +231,7 @@ class SupportRequest(models.Model):
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
     resolved_at = models.DateTimeField(_("resolved at"), null=True, blank=True)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _("Support Request")
@@ -239,3 +247,95 @@ class SupportRequest(models.Model):
         self.status = "resolved"
         self.resolved_at = timezone.now()
         self.save()
+
+
+class Notification(models.Model):
+    """
+    Model for storing user notifications.
+    """
+
+    TYPE_CHOICES = [
+        ("bot_created", _("Bot Created")),
+        ("bot_updated", _("Bot Updated")),
+        ("bot_deleted", _("Bot Deleted")),
+        ("bot_activated", _("Bot Activated")),
+        ("bot_deactivated", _("Bot Deactivated")),
+        ("bot_executed", _("Bot Executed")),
+        ("bot_execution_complete", _("Bot Execution Complete")),
+        ("bot_trade_executed", _("Bot Trade Executed")),
+        ("account_updated", _("Account Updated")),
+        ("password_changed", _("Password Changed")),
+        ("profile_updated", _("Profile Updated")),
+        ("order_filled", _("Order Filled")),
+        ("order_partial", _("Order Partially Filled")),
+        ("order_cancelled", _("Order Cancelled")),
+        ("system", _("System Notification")),
+        ("other", _("Other")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        help_text=_("User who receives this notification"),
+    )
+    type = models.CharField(
+        _("type"),
+        max_length=50,
+        choices=TYPE_CHOICES,
+        default="other",
+        help_text=_("Type of notification"),
+    )
+    title = models.CharField(
+        _("title"), max_length=200, help_text=_("Notification title")
+    )
+    message = models.TextField(_("message"), help_text=_("Notification message"))
+    is_read = models.BooleanField(
+        _("is read"),
+        default=False,
+        help_text=_("Whether the notification has been read"),
+    )
+    # Optional link to related object
+    related_object_type = models.CharField(
+        _("related object type"),
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text=_("Type of related object (e.g., 'bot', 'order')"),
+    )
+    related_object_id = models.UUIDField(
+        _("related object id"),
+        null=True,
+        blank=True,
+        help_text=_("ID of related object"),
+    )
+    # Additional data as JSON
+    metadata = models.JSONField(
+        _("metadata"),
+        default=dict,
+        blank=True,
+        help_text=_("Additional notification data"),
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    read_at = models.DateTimeField(_("read at"), null=True, blank=True)
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = _("Notification")
+        verbose_name_plural = _("Notifications")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "is_read", "-created_at"]),
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Notification: {self.title} ({self.user.email})"
+
+    def mark_as_read(self):
+        """Mark the notification as read."""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=["is_read", "read_at"])

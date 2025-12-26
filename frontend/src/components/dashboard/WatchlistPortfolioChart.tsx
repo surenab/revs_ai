@@ -248,18 +248,18 @@ const WatchlistPortfolioChart: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {/* Period Selection */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold text-white">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+        <h3 className="text-lg sm:text-xl font-semibold text-white">
           Portfolio Performance
         </h3>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1 sm:space-x-2 overflow-x-auto pb-1 sm:pb-0">
           {TIME_PERIODS.map((period) => (
             <button
               key={period.value}
               onClick={() => setSelectedPeriod(period)}
-              className={`text-sm py-1 px-3 rounded transition-colors ${
+              className={`text-xs sm:text-sm py-1 px-2 sm:px-3 rounded transition-colors whitespace-nowrap flex-shrink-0 ${
                 selectedPeriod.value === period.value
                   ? "bg-blue-600 text-white"
                   : "bg-white/10 text-white/70 hover:bg-white/20"
@@ -272,27 +272,27 @@ const WatchlistPortfolioChart: React.FC = () => {
       </div>
 
       {/* Stock Performance Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 mb-3 sm:mb-4">
         {stocksData.map((stock, index) => (
           <motion.div
             key={stock.symbol}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className="bg-white/5 rounded-lg p-3"
+            className="bg-white/5 rounded-lg p-2 sm:p-3"
           >
-            <div className="flex items-center space-x-2 mb-1">
+            <div className="flex items-center space-x-1 sm:space-x-2 mb-1">
               <div
-                className="w-2 h-2 rounded-full"
+                className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0"
                 style={{ backgroundColor: stock.color }}
               />
-              <span className="text-white font-medium text-sm">
+              <span className="text-white font-medium text-xs sm:text-sm truncate">
                 {stock.symbol}
               </span>
             </div>
             {stock.latestPrice && (
               <>
-                <p className="text-white text-sm font-semibold">
+                <p className="text-white text-xs sm:text-sm font-semibold truncate">
                   {formatPrice(stock.latestPrice)}
                 </p>
                 {stock.priceChangePercent && (
@@ -304,11 +304,11 @@ const WatchlistPortfolioChart: React.FC = () => {
                     }`}
                   >
                     {(stock.priceChange || 0) >= 0 ? (
-                      <TrendingUp className="w-2 h-2" />
+                      <TrendingUp className="w-2 h-2 flex-shrink-0" />
                     ) : (
-                      <TrendingDown className="w-2 h-2" />
+                      <TrendingDown className="w-2 h-2 flex-shrink-0" />
                     )}
-                    <span>
+                    <span className="truncate">
                       {(stock.priceChange || 0) >= 0 ? "+" : ""}
                       {formatPercentage(stock.priceChangePercent)}%
                     </span>
@@ -321,19 +321,19 @@ const WatchlistPortfolioChart: React.FC = () => {
       </div>
 
       {/* Chart */}
-      <div className="h-64 min-h-[256px] w-full">
+      <div className="h-48 sm:h-56 md:h-64 min-h-[192px] sm:min-h-[224px] md:min-h-[256px] w-full">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
-              <Loader2 className="w-8 h-8 text-white/40 mx-auto mb-2 animate-spin" />
-              <p className="text-white/60">Loading chart data...</p>
+              <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-white/40 mx-auto mb-2 animate-spin" />
+              <p className="text-white/60 text-sm sm:text-base">Loading chart data...</p>
             </div>
           </div>
         ) : error ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
-              <BarChart3 className="w-12 h-12 text-red-400/60 mx-auto mb-2" />
-              <p className="text-red-400">{error}</p>
+              <BarChart3 className="w-10 h-10 sm:w-12 sm:h-12 text-red-400/60 mx-auto mb-2" />
+              <p className="text-red-400 text-sm sm:text-base">{error}</p>
             </div>
           </div>
         ) : chartData.length > 0 && stocksData.length > 0 ? (
@@ -341,36 +341,38 @@ const WatchlistPortfolioChart: React.FC = () => {
             className="w-full h-full"
             style={{
               width: "100%",
-              height: "256px",
-              minHeight: "256px",
+              height: "100%",
+              minHeight: "192px",
               minWidth: 0,
             }}
           >
             <ResponsiveContainer
               width="100%"
               height="100%"
-              minHeight={256}
+              minHeight={192}
               minWidth={0}
               aspect={undefined}
             >
               <LineChart
                 data={chartData}
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis
                   dataKey="time"
                   stroke="#9CA3AF"
-                  fontSize={12}
+                  fontSize={10}
                   tick={{ fill: "#9CA3AF" }}
+                  interval="preserveStartEnd"
                 />
                 <YAxis
                   stroke="#9CA3AF"
-                  fontSize={12}
+                  fontSize={10}
                   tick={{ fill: "#9CA3AF" }}
                   tickFormatter={(value: number) =>
                     `$${Number(value).toFixed(0)}`
                   }
+                  width={40}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 {stocksData.map((stock) => (
@@ -390,10 +392,10 @@ const WatchlistPortfolioChart: React.FC = () => {
           </div>
         ) : (
           <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <BarChart3 className="w-12 h-12 text-white/40 mx-auto mb-2" />
-              <p className="text-white/60">No chart data available</p>
-              <p className="text-white/40 text-sm">
+            <div className="text-center px-2">
+              <BarChart3 className="w-10 h-10 sm:w-12 sm:h-12 text-white/40 mx-auto mb-2" />
+              <p className="text-white/60 text-sm sm:text-base">No chart data available</p>
+              <p className="text-white/40 text-xs sm:text-sm">
                 {stocksData.length === 0
                   ? "No stock data loaded"
                   : `${stocksData.length} stocks loaded, ${chartData.length} data points`}

@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from .models import SupportRequest, User, UserProfile
+from .models import Notification, SupportRequest, User, UserProfile
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -279,3 +279,23 @@ class SupportRequestSerializer(serializers.ModelSerializer):
             if not validated_data.get("email"):
                 validated_data["email"] = request.user.email
         return super().create(validated_data)
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """Serializer for Notification model."""
+
+    class Meta:
+        model = Notification
+        fields = [
+            "id",
+            "type",
+            "title",
+            "message",
+            "is_read",
+            "related_object_type",
+            "related_object_id",
+            "metadata",
+            "created_at",
+            "read_at",
+        ]
+        read_only_fields = ["id", "created_at", "read_at"]

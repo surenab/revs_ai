@@ -4,9 +4,11 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { Toaster } from "react-hot-toast";
+import { Toaster, ToastBar, toast } from "react-hot-toast";
+import { X } from "lucide-react";
 import { AuthProvider } from "./contexts/AuthContext";
 import { WatchlistProvider } from "./contexts/WatchlistContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/layout/Layout";
 import Login from "./pages/Login";
@@ -23,82 +25,110 @@ import Indicators from "./pages/Indicators";
 import PatternDetail from "./pages/PatternDetail";
 import Patterns from "./pages/Patterns";
 import PortfolioPage from "./pages/Portfolio";
+import TradingBots from "./pages/TradingBots";
+import TradingBotDetail from "./pages/TradingBotDetail";
+import EditBot from "./pages/EditBot";
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="App">
-          <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
+      <NotificationProvider>
+        <Router>
+          <div className="App">
+            <Routes>
+              {/* Public routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
 
-            {/* Protected routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <WatchlistProvider>
-                    <Layout />
-                  </WatchlistProvider>
-                </ProtectedRoute>
-              }
+              {/* Protected routes */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <WatchlistProvider>
+                      <Layout />
+                    </WatchlistProvider>
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="contact-support" element={<ContactSupport />} />
+
+                {/* Stock routes */}
+                <Route path="stocks" element={<Stocks />} />
+                <Route path="stocks/:symbol" element={<StockDetail />} />
+
+                {/* Indicator routes */}
+                <Route path="indicators" element={<Indicators />} />
+                <Route path="indicators/:id" element={<IndicatorDetail />} />
+
+                {/* Pattern routes */}
+                <Route path="patterns" element={<Patterns />} />
+                <Route path="patterns/:id" element={<PatternDetail />} />
+
+                {/* Portfolio route */}
+                <Route path="portfolio" element={<PortfolioPage />} />
+
+                {/* Trading Bots routes */}
+                <Route path="trading-bots" element={<TradingBots />} />
+                <Route path="trading-bots/:id" element={<TradingBotDetail />} />
+                <Route path="trading-bots/:id/edit" element={<EditBot />} />
+              </Route>
+
+              {/* Catch all route */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+
+            {/* Toast notifications */}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: "rgba(255, 255, 255, 0.1)",
+                  backdropFilter: "blur(10px)",
+                  color: "#fff",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                },
+                success: {
+                  iconTheme: {
+                    primary: "#10b981",
+                    secondary: "#fff",
+                  },
+                },
+                error: {
+                  iconTheme: {
+                    primary: "#ef4444",
+                    secondary: "#fff",
+                  },
+                },
+              }}
             >
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="contact-support" element={<ContactSupport />} />
-
-              {/* Stock routes */}
-              <Route path="stocks" element={<Stocks />} />
-              <Route path="stocks/:symbol" element={<StockDetail />} />
-
-              {/* Indicator routes */}
-              <Route path="indicators" element={<Indicators />} />
-              <Route path="indicators/:id" element={<IndicatorDetail />} />
-
-              {/* Pattern routes */}
-              <Route path="patterns" element={<Patterns />} />
-              <Route path="patterns/:id" element={<PatternDetail />} />
-
-              {/* Portfolio route */}
-              <Route path="portfolio" element={<PortfolioPage />} />
-            </Route>
-
-            {/* Catch all route */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-
-          {/* Toast notifications */}
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: "rgba(255, 255, 255, 0.1)",
-                backdropFilter: "blur(10px)",
-                color: "#fff",
-                border: "1px solid rgba(255, 255, 255, 0.2)",
-              },
-              success: {
-                iconTheme: {
-                  primary: "#10b981",
-                  secondary: "#fff",
-                },
-              },
-              error: {
-                iconTheme: {
-                  primary: "#ef4444",
-                  secondary: "#fff",
-                },
-              },
-            }}
-          />
-        </div>
-      </Router>
+              {(t) => (
+                <ToastBar toast={t}>
+                  {({ icon, message }) => (
+                    <div className="toast-container flex items-center gap-2 w-full group">
+                      {icon}
+                      <div className="flex-1">{message}</div>
+                      <button
+                        onClick={() => toast.dismiss(t.id)}
+                        className="toast-close-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 hover:bg-white/20 rounded flex items-center justify-center min-w-[20px] min-h-[20px] text-white/80 hover:text-white"
+                        aria-label="Close"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </ToastBar>
+              )}
+            </Toaster>
+          </div>
+        </Router>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

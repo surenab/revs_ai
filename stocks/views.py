@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from users.models import UserProfile
+from users.views import create_notification
 
 from .models import (
     IntradayPrice,
@@ -19,9 +20,12 @@ from .models import (
     StockAlert,
     StockPrice,
     StockTick,
+    TradingBotConfig,
+    TradingBotExecution,
     UserWatchlist,
 )
 from .serializers import (
+    BotPerformanceSerializer,
     IntradayPriceListSerializer,
     OrderCreateSerializer,
     OrderSerializer,
@@ -30,11 +34,14 @@ from .serializers import (
     RealTimeDataSerializer,
     StockAlertCreateSerializer,
     StockAlertSerializer,
+    StockListSerializer,
     StockPriceListSerializer,
     StockSerializer,
     StockTickListSerializer,
     StockTimeSeriesSerializer,
     TickDataSerializer,
+    TradingBotConfigSerializer,
+    TradingBotExecutionSerializer,
     UserWatchlistCreateSerializer,
     UserWatchlistSerializer,
 )
@@ -72,6 +79,20 @@ class StockListView(generics.ListAPIView):
             queryset = queryset.filter(sector__icontains=sector)
 
         return queryset.order_by("symbol")
+
+
+class AllStocksListView(generics.ListAPIView):
+    """
+    Get all active stocks (id, symbol, name only) in one response.
+    Used for dropdowns and selection widgets.
+    """
+
+    serializer_class = StockListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None  # Disable pagination to return all stocks
+
+    def get_queryset(self):
+        return Stock.objects.filter(is_active=True).order_by("symbol")
 
 
 class StockDetailView(generics.RetrieveAPIView):
@@ -1251,19 +1272,19 @@ def execute_orders(request):  # noqa: PLR0912, PLR0915
                     if latest_price:
                         if order.transaction_type == "buy":
                             error_reason = _(
-                                "Target price not met. Current: ${current:,.2f}, "
-                                "Target: ${target:,.2f}"
+                                "Target price not met. Current: $%(current)s, "
+                                "Target: $%(target)s"
                             ) % {
-                                "current": latest_price.close_price,
-                                "target": order.target_price,
+                                "current": f"{latest_price.close_price:,.2f}",
+                                "target": f"{order.target_price:,.2f}",
                             }
                         else:  # sell
                             error_reason = _(
-                                "Target price not met. Current: ${current:,.2f}, "
-                                "Target: ${target:,.2f}"
+                                "Target price not met. Current: $%(current)s, "
+                                "Target: $%(target)s"
                             ) % {
-                                "current": latest_price.close_price,
-                                "target": order.target_price,
+                                "current": f"{latest_price.close_price:,.2f}",
+                                "target": f"{order.target_price:,.2f}",
                             }
                     else:
                         error_reason = _(
@@ -1364,3 +1385,208 @@ def order_summary(request):
             "waiting_orders": waiting_data,
         }
     )
+
+
+# Trading Bot Endpoints
+
+
+class TradingBotListView(generics.ListCreateAPIView):
+    """List user's trading bots or create a new bot."""
+
+    serializer_class = TradingBotConfigSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return TradingBotConfig.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        bot = serializer.save(user=self.request.user)
+        # Create notification
+        create_notification(
+            user=self.request.user,
+            notification_type="bot_created",
+            title="Bot Created",
+            message=f'Your trading bot "{bot.name}" has been created successfully.',
+            related_object_type="bot",
+            related_object_id=bot.id,
+        )
+
+
+class TradingBotDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a trading bot."""
+
+    serializer_class = TradingBotConfigSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return TradingBotConfig.objects.filter(user=self.request.user)
+
+    def perform_update(self, serializer):
+        bot = serializer.save()
+        # Create notification
+        create_notification(
+            user=self.request.user,
+            notification_type="bot_updated",
+            title="Bot Updated",
+            message=f'Your trading bot "{bot.name}" has been updated.',
+            related_object_type="bot",
+            related_object_id=bot.id,
+        )
+
+    def perform_destroy(self, instance):
+        bot_name = instance.name
+        instance.delete()
+        # Create notification
+        create_notification(
+            user=self.request.user,
+            notification_type="bot_deleted",
+            title="Bot Deleted",
+            message=f'Your trading bot "{bot_name}" has been deleted.',
+        )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def activate_bot(request, pk):
+    """Activate a trading bot."""
+    try:
+        bot = TradingBotConfig.objects.get(id=pk, user=request.user)
+        bot.is_active = True
+        bot.save()
+        # Create notification
+        create_notification(
+            user=request.user,
+            notification_type="bot_activated",
+            title="Bot Activated",
+            message=f'Your trading bot "{bot.name}" has been activated.',
+            related_object_type="bot",
+            related_object_id=bot.id,
+        )
+        serializer = TradingBotConfigSerializer(bot)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def deactivate_bot(request, pk):
+    """Deactivate a trading bot."""
+    try:
+        bot = TradingBotConfig.objects.get(id=pk, user=request.user)
+        bot.is_active = False
+        bot.save()
+        # Create notification
+        create_notification(
+            user=request.user,
+            notification_type="bot_deactivated",
+            title="Bot Deactivated",
+            message=f'Your trading bot "{bot.name}" has been deactivated.',
+            related_object_type="bot",
+            related_object_id=bot.id,
+        )
+        serializer = TradingBotConfigSerializer(bot)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def execute_bot(request, pk):
+    """Manually trigger bot execution."""
+    try:
+        bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
+
+        if not bot_config.is_active:
+            return Response(
+                {"error": "Bot is not active"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from .bot_engine import TradingBot
+
+        bot = TradingBot(bot_config)
+        results = bot.run_analysis()
+
+        # Create notification
+        buy_count = len(results.get("buy_signals", []))
+        sell_count = len(results.get("sell_signals", []))
+        create_notification(
+            user=request.user,
+            notification_type="bot_executed",
+            title="Bot Executed",
+            message=f'Your trading bot "{bot_config.name}" executed: {buy_count} buy signals, {sell_count} sell signals.',
+            related_object_type="bot",
+            related_object_id=bot_config.id,
+            metadata={"buy_signals": buy_count, "sell_signals": sell_count},
+        )
+
+        return Response(results, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class TradingBotExecutionListView(generics.ListAPIView):
+    """List bot execution history."""
+
+    serializer_class = TradingBotExecutionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        bot_id = self.kwargs.get("bot_id")
+        return TradingBotExecution.objects.filter(
+            bot_config_id=bot_id, bot_config__user=self.request.user
+        ).select_related("stock", "bot_config", "executed_order")
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def bot_performance(request, pk):
+    """Get bot performance metrics."""
+    try:
+        bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
+
+        # Get all executed orders
+        orders = Order.objects.filter(
+            bot_config=bot_config, status="done"
+        ).select_related("stock")
+
+        total_trades = orders.count()
+        successful_trades = orders.filter(
+            transaction_type="sell", executed_price__isnull=False
+        ).count()
+
+        # Calculate P&L (simplified)
+        total_profit_loss = Decimal("0.00")
+        profits = []
+        losses = []
+
+        for order in orders:
+            if order.executed_price and order.executed_at:
+                # Simplified P&L calculation
+                # In reality, need to match buy/sell pairs
+                pass
+
+        win_rate = (
+            (successful_trades / total_trades * 100)
+            if total_trades > 0
+            else Decimal("0.00")
+        )
+
+        performance_data = {
+            "bot_id": str(bot_config.id),
+            "bot_name": bot_config.name,
+            "total_trades": total_trades,
+            "successful_trades": successful_trades,
+            "total_profit_loss": total_profit_loss,
+            "win_rate": win_rate,
+            "average_profit": sum(profits) / len(profits)
+            if profits
+            else Decimal("0.00"),
+            "average_loss": sum(losses) / len(losses) if losses else Decimal("0.00"),
+        }
+
+        serializer = BotPerformanceSerializer(performance_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)

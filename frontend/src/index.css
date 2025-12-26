@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
+  }
+}
+
 @layer base {
   * {
     @apply border-gray-200;
@@ -46,4 +52,40 @@
   .card {
     @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6 shadow-xl;
   }
+}
+
+/* Toast notification close button - show on hover */
+/* Target the custom toast close button */
+.toast-close-button {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}
+
+/* Show close button when hovering over the toast container */
+.toast-container:hover .toast-close-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Style the close button */
+.toast-close-button {
+  color: rgba(255, 255, 255, 0.8) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 4px !important;
+  padding: 4px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease-in-out !important;
+  border: none !important;
+  cursor: pointer !important;
+  margin-left: 8px !important;
+}
+
+.toast-close-button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 1) !important;
 }

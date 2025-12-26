@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    NotificationViewSet,
     PasswordResetConfirmView,
     PasswordResetView,
     UserLoginView,
@@ -29,6 +30,7 @@ urlpatterns = [
 # Create router for ViewSets
 router = DefaultRouter()
 router.register(r"users", UserViewSet)
+router.register(r"notifications", NotificationViewSet, basename="notification")
 
 # Add router URLs after specific routes
 urlpatterns += [

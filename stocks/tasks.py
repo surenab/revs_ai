@@ -5,6 +5,7 @@ Celery tasks for background stock data processing.
 import logging
 import time
 from datetime import datetime
+from datetime import time as dt_time
 
 import pytz
 from celery import shared_task
@@ -12,7 +13,14 @@ from django.core.management import call_command
 from django.db import transaction
 from django.utils import timezone
 
-from .models import IntradayPrice, Stock, StockPrice, StockTick
+from .bot_engine import TradingBot
+from .models import (
+    IntradayPrice,
+    Stock,
+    StockPrice,
+    StockTick,
+    TradingBotConfig,
+)
 from .services import yahoo_finance_service
 
 logger = logging.getLogger(__name__)
@@ -136,6 +144,127 @@ def sync_single_stock_intraday(self, symbol, interval="1m", period="1d"):
             raise self.retry(exc=exc) from exc
 
         return {"status": "error", "message": str(exc), "symbol": symbol}
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def execute_trading_bots(  # noqa: PLR0912, PLR0915
+    self, stock_symbol: str | None = None
+):
+    """
+    Celery task to execute trading bots for price updates.
+
+    Args:
+        stock_symbol: Optional specific stock symbol to process (if None, processes all)
+
+    Returns:
+        Dict with execution results
+    """
+    try:
+        logger.info("Starting trading bot execution task")
+
+        # Get all active bots
+        active_bots = TradingBotConfig.objects.filter(is_active=True)
+
+        if not active_bots.exists():
+            logger.info("No active bots found")
+            return {
+                "status": "success",
+                "message": "No active bots to execute",
+                "bots_processed": 0,
+            }
+
+        results = {
+            "status": "success",
+            "bots_processed": 0,
+            "trades_executed": 0,
+            "errors": [],
+        }
+
+        # Process each active bot
+        for bot_config in active_bots:
+            try:
+                # If stock_symbol is provided, only process if stock is in bot's assigned stocks
+                if stock_symbol:
+                    stock = Stock.objects.filter(symbol=stock_symbol).first()
+                    if not stock or stock not in bot_config.assigned_stocks.all():
+                        continue
+
+                bot = TradingBot(bot_config)
+
+                # Run analysis
+                if stock_symbol:
+                    stock = Stock.objects.get(symbol=stock_symbol)
+                    analysis = bot.analyze_stock(stock)
+
+                    # Execute trade if signal detected
+                    if analysis["action"] in ["buy", "sell"]:
+                        order = bot.execute_trade(stock, analysis["action"], analysis)
+                        if order:
+                            results["trades_executed"] += 1
+                else:
+                    # Analyze all assigned stocks
+                    bot_results = bot.run_analysis()
+
+                    # Execute trades for buy/sell signals
+                    for buy_signal in bot_results.get("buy_signals", []):
+                        try:
+                            stock = Stock.objects.get(symbol=buy_signal["stock"])
+                            analysis = bot.analyze_stock(stock)
+                            if analysis["action"] == "buy":
+                                order = bot.execute_trade(stock, "buy", analysis)
+                                if order:
+                                    results["trades_executed"] += 1
+                        except Exception as e:
+                            logger.exception(
+                                f"Error executing buy trade for {buy_signal['stock']}"
+                            )
+                            results["errors"].append(
+                                f"Buy trade error for {buy_signal['stock']}: {e!s}"
+                            )
+
+                    for sell_signal in bot_results.get("sell_signals", []):
+                        try:
+                            stock = Stock.objects.get(symbol=sell_signal["stock"])
+                            analysis = bot.analyze_stock(stock)
+                            if analysis["action"] == "sell":
+                                order = bot.execute_trade(stock, "sell", analysis)
+                                if order:
+                                    results["trades_executed"] += 1
+                        except Exception as e:
+                            logger.exception(
+                                f"Error executing sell trade for {sell_signal['stock']}"
+                            )
+                            results["errors"].append(
+                                f"Sell trade error for {sell_signal['stock']}: {e!s}"
+                            )
+
+                results["bots_processed"] += 1
+
+            except Exception as exc:
+                logger.exception(f"Error processing bot {bot_config.name}")
+                results["errors"].append(f"Bot {bot_config.name}: {exc!s}")
+                continue
+
+        logger.info(
+            f"Trading bot execution completed: {results['bots_processed']} bots processed, "
+            f"{results['trades_executed']} trades executed"
+        )
+
+        return results  # noqa: TRY300
+
+    except Exception as exc:
+        logger.exception("Trading bot execution task failed")
+
+        # Retry the task if we haven't exceeded max retries
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying task in {self.default_retry_delay} seconds...")
+            raise self.retry(exc=exc) from exc
+
+        return {
+            "status": "error",
+            "message": str(exc),
+            "timestamp": timezone.now().isoformat(),
+        }
 
 
 def _save_intraday_data(stock, data, interval):
@@ -650,8 +779,8 @@ def is_market_open():
             return False
 
         # Check if it's within market hours (9:30 AM - 4:00 PM EST)
-        market_open = time(9, 30)  # 9:30 AM
-        market_close = time(16, 0)  # 4:00 PM
+        market_open = dt_time(9, 30)  # 9:30 AM
+        market_close = dt_time(16, 0)  # 4:00 PM
         current_time = now.time()
 
         is_open = market_open <= current_time <= market_close

@@ -857,55 +857,67 @@ const PortfolioPage: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen p-6">
+    <div className="min-h-screen p-3 sm:p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8 flex items-center justify-between"
+          className="mb-4 sm:mb-6 md:mb-8"
         >
-          <div>
-            <h1 className="text-4xl font-bold text-white mb-2">My Portfolio</h1>
-            <p className="text-white/70 text-lg">
-              Track your investments and manage orders
-            </p>
-          </div>
-          <div className="flex items-center space-x-3">
-            {pendingOrders.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-0">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-1 sm:mb-2">
+                My Portfolio
+              </h1>
+              <p className="text-white/70 text-sm sm:text-base md:text-lg">
+                Track your investments and manage orders
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {pendingOrders.length > 0 && (
+                <button
+                  onClick={executeOrders}
+                  className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg text-white text-xs sm:text-sm font-medium hover:from-green-700 hover:to-emerald-700 transition-all"
+                >
+                  <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">
+                    Execute Orders ({pendingOrders.length})
+                  </span>
+                  <span className="sm:hidden">
+                    Execute ({pendingOrders.length})
+                  </span>
+                </button>
+              )}
+              {activeTab === "holdings" && portfolio.length > 0 && (
+                <button
+                  onClick={exportPortfolioToPDF}
+                  className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white text-xs sm:text-sm font-medium hover:from-purple-700 hover:to-pink-700 transition-all"
+                >
+                  <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Export Portfolio</span>
+                  <span className="sm:hidden">Export</span>
+                </button>
+              )}
+              {activeTab === "orders" && orders.length > 0 && (
+                <button
+                  onClick={exportOrdersToPDF}
+                  className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white text-xs sm:text-sm font-medium hover:from-purple-700 hover:to-pink-700 transition-all"
+                >
+                  <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Export Orders</span>
+                  <span className="sm:hidden">Export</span>
+                </button>
+              )}
               <button
-                onClick={executeOrders}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg text-white font-medium hover:from-green-700 hover:to-emerald-700 transition-all"
+                onClick={() => setShowBuyModal(true)}
+                className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white text-xs sm:text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all"
               >
-                <Play className="w-4 h-4" />
-                <span>Execute Orders ({pendingOrders.length})</span>
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline">Place Order</span>
+                <span className="sm:hidden">Order</span>
               </button>
-            )}
-            {activeTab === "holdings" && portfolio.length > 0 && (
-              <button
-                onClick={exportPortfolioToPDF}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white font-medium hover:from-purple-700 hover:to-pink-700 transition-all"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export Portfolio</span>
-              </button>
-            )}
-            {activeTab === "orders" && orders.length > 0 && (
-              <button
-                onClick={exportOrdersToPDF}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white font-medium hover:from-purple-700 hover:to-pink-700 transition-all"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export Orders</span>
-              </button>
-            )}
-            <button
-              onClick={() => setShowBuyModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-700 hover:to-purple-700 transition-all"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Place Order</span>
-            </button>
+            </div>
           </div>
         </motion.div>
 
@@ -915,53 +927,53 @@ const PortfolioPage: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8"
           >
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-white/60 text-sm font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
                     Cash Balance
                   </p>
-                  <p className="text-2xl font-bold text-white mt-1">
+                  <p className="text-xl sm:text-2xl font-bold text-white mt-1 truncate">
                     {formatPrice(summary.cash_balance || 0)}
                   </p>
                   <button
                     onClick={() => setShowAddFundsModal(true)}
-                    className="mt-2 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg text-white text-xs font-medium hover:from-green-700 hover:to-emerald-700 transition-all"
+                    className="mt-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg text-white text-xs font-medium hover:from-green-700 hover:to-emerald-700 transition-all"
                   >
                     Add Funds
                   </button>
                 </div>
-                <div className="p-3 bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-lg">
-                  <DollarSign className="w-6 h-6 text-white" />
+                <div className="p-2 sm:p-3 bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-lg flex-shrink-0 ml-2">
+                  <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </div>
             </div>
 
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/60 text-sm font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
                     Stock Value
                   </p>
-                  <p className="text-2xl font-bold text-white mt-1">
+                  <p className="text-xl sm:text-2xl font-bold text-white mt-1 truncate">
                     {formatPrice(summary.total_current_value)}
                   </p>
                 </div>
-                <div className="p-3 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg">
-                  <PieChart className="w-6 h-6 text-white" />
+                <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-lg flex-shrink-0 ml-2">
+                  <PieChart className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </div>
             </div>
 
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/60 text-sm font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
                     Total Portfolio
                   </p>
-                  <p className="text-2xl font-bold text-white mt-1">
+                  <p className="text-xl sm:text-2xl font-bold text-white mt-1 truncate">
                     {formatPrice(
                       summary.total_portfolio_value ||
                         summary.total_current_value +
@@ -969,36 +981,36 @@ const PortfolioPage: React.FC = () => {
                     )}
                   </p>
                 </div>
-                <div className="p-3 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-lg">
-                  <DollarSign className="w-6 h-6 text-white" />
+                <div className="p-2 sm:p-3 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-lg flex-shrink-0 ml-2">
+                  <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </div>
             </div>
 
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/60 text-sm font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
                     Total Cost
                   </p>
-                  <p className="text-2xl font-bold text-white mt-1">
+                  <p className="text-xl sm:text-2xl font-bold text-white mt-1 truncate">
                     {formatPrice(summary.total_cost)}
                   </p>
                 </div>
-                <div className="p-3 bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-lg">
-                  <PieChart className="w-6 h-6 text-white" />
+                <div className="p-2 sm:p-3 bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-lg flex-shrink-0 ml-2">
+                  <PieChart className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </div>
             </div>
 
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/60 text-sm font-medium">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
                     Total Gain/Loss
                   </p>
                   <p
-                    className={`text-2xl font-bold mt-1 ${
+                    className={`text-xl sm:text-2xl font-bold mt-1 truncate ${
                       summary.total_gain_loss >= 0
                         ? "text-green-400"
                         : "text-red-400"
@@ -1006,20 +1018,20 @@ const PortfolioPage: React.FC = () => {
                   >
                     {formatPrice(summary.total_gain_loss)}
                   </p>
-                  <div className="flex items-center mt-2">
+                  <div className="flex items-center mt-1 sm:mt-2">
                     {summary.total_gain_loss >= 0 ? (
-                      <TrendingUp className="w-4 h-4 text-green-400 mr-1" />
+                      <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-green-400 mr-1 flex-shrink-0" />
                     ) : (
-                      <TrendingDown className="w-4 h-4 text-red-400 mr-1" />
+                      <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4 text-red-400 mr-1 flex-shrink-0" />
                     )}
                     <span
-                      className={`text-sm font-medium ${
+                      className={`text-xs sm:text-sm font-medium ${
                         summary.total_gain_loss >= 0
                           ? "text-green-400"
                           : "text-red-400"
                       }`}
                     >
-                      {formatPercentage(summary.total_gain_loss_percent)}
+                      {formatPercentage(summary.total_gain_loss_percent)}%
                     </span>
                   </div>
                 </div>
@@ -1028,19 +1040,21 @@ const PortfolioPage: React.FC = () => {
 
             <div className="card hover:bg-white/15 transition-all duration-300">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white/60 text-sm font-medium">Holdings</p>
-                  <p className="text-2xl font-bold text-white mt-1">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/60 text-xs sm:text-sm font-medium">
+                    Holdings
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-white mt-1">
                     {summary.total_holdings}
                   </p>
                   {orderSummary && (
-                    <p className="text-sm text-white/60 mt-2">
+                    <p className="text-xs sm:text-sm text-white/60 mt-1 sm:mt-2">
                       {orderSummary.status_counts.waiting} pending orders
                     </p>
                   )}
                 </div>
-                <div className="p-3 bg-gradient-to-r from-orange-600/20 to-red-600/20 rounded-lg">
-                  <PieChart className="w-6 h-6 text-white" />
+                <div className="p-2 sm:p-3 bg-gradient-to-r from-orange-600/20 to-red-600/20 rounded-lg flex-shrink-0 ml-2">
+                  <PieChart className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </div>
             </div>
@@ -1048,10 +1062,10 @@ const PortfolioPage: React.FC = () => {
         )}
 
         {/* Tabs */}
-        <div className="flex space-x-4 mb-6">
+        <div className="flex space-x-2 sm:space-x-4 mb-4 sm:mb-6 overflow-x-auto pb-1 sm:pb-0">
           <button
             onClick={() => setActiveTab("holdings")}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all whitespace-nowrap flex-shrink-0 ${
               activeTab === "holdings"
                 ? "bg-blue-600 text-white"
                 : "bg-white/5 text-white/60 hover:bg-white/10"
@@ -1061,7 +1075,7 @@ const PortfolioPage: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab("orders")}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all whitespace-nowrap flex-shrink-0 ${
               activeTab === "orders"
                 ? "bg-blue-600 text-white"
                 : "bg-white/5 text-white/60 hover:bg-white/10"
@@ -1069,7 +1083,7 @@ const PortfolioPage: React.FC = () => {
           >
             Orders{" "}
             {orderSummary && orderSummary.status_counts.waiting > 0 && (
-              <span className="ml-2 px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">
+              <span className="ml-1 sm:ml-2 px-1.5 sm:px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">
                 {orderSummary.status_counts.waiting}
               </span>
             )}
@@ -1084,62 +1098,64 @@ const PortfolioPage: React.FC = () => {
             transition={{ delay: 0.2 }}
             className="card"
           >
-            <h3 className="text-xl font-semibold text-white mb-6">
+            <h3 className="text-lg sm:text-xl font-semibold text-white mb-4 sm:mb-6">
               Your Holdings
             </h3>
 
             {isLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="animate-pulse">
-                    <div className="h-20 bg-white/5 rounded-lg"></div>
+                    <div className="h-16 sm:h-20 bg-white/5 rounded-lg"></div>
                   </div>
                 ))}
               </div>
             ) : portfolio.length === 0 ? (
-              <div className="text-center py-12">
-                <PieChart className="w-16 h-16 mx-auto mb-4 text-white/30" />
-                <p className="text-white/60 text-lg mb-2">No holdings yet</p>
-                <p className="text-white/40 text-sm mb-4">
+              <div className="text-center py-8 sm:py-12">
+                <PieChart className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 text-white/30" />
+                <p className="text-white/60 text-base sm:text-lg mb-2">
+                  No holdings yet
+                </p>
+                <p className="text-white/40 text-xs sm:text-sm mb-3 sm:mb-4">
                   Place an order to start building your portfolio
                 </p>
                 <button
                   onClick={() => setShowBuyModal(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-700 hover:to-purple-700 transition-all"
+                  className="px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white text-sm sm:text-base font-medium hover:from-blue-700 hover:to-purple-700 transition-all"
                 >
                   Place Your First Order
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto -mx-3 sm:mx-0">
+                <table className="w-full min-w-[800px]">
                   <thead>
                     <tr className="border-b border-white/10">
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Stock
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Quantity
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden md:table-cell">
                         Purchase Price
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Current Price
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden lg:table-cell">
                         Total Cost
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden lg:table-cell">
                         Current Value
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Gain/Loss
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden xl:table-cell">
                         Purchase Date
                       </th>
-                      <th className="text-right py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-right py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Actions
                       </th>
                     </tr>
@@ -1153,29 +1169,29 @@ const PortfolioPage: React.FC = () => {
                         transition={{ delay: 0.2 + index * 0.05 }}
                         className="border-b border-white/5 hover:bg-white/5 transition-colors"
                       >
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <Link
                             to={`/stocks/${holding.stock_symbol}`}
                             className="block"
                           >
-                            <p className="font-semibold text-white">
+                            <p className="font-semibold text-white text-sm sm:text-base">
                               {holding.stock_symbol}
                             </p>
-                            <p className="text-sm text-white/60 line-clamp-1">
+                            <p className="text-xs sm:text-sm text-white/60 line-clamp-1">
                               {holding.stock_details?.name || "N/A"}
                             </p>
                           </Link>
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base">
                           {holding.quantity.toLocaleString()}
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base hidden md:table-cell">
                           {formatPrice(holding.purchase_price)}
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           {holding.current_price ? (
                             <div>
-                              <p className="text-white">
+                              <p className="text-white text-sm sm:text-base">
                                 {formatPrice(holding.current_price.close_price)}
                               </p>
                               <p
@@ -1188,19 +1204,20 @@ const PortfolioPage: React.FC = () => {
                                 {formatPercentage(
                                   holding.current_price.price_change_percent
                                 )}
+                                %
                               </p>
                             </div>
                           ) : (
-                            <span className="text-white/40">N/A</span>
+                            <span className="text-white/40 text-sm">N/A</span>
                           )}
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base hidden lg:table-cell">
                           {formatPrice(holding.total_cost)}
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base hidden lg:table-cell">
                           {formatPrice(holding.current_value)}
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <div
                             className={`flex items-center space-x-1 ${
                               holding.gain_loss >= 0
@@ -1209,25 +1226,25 @@ const PortfolioPage: React.FC = () => {
                             }`}
                           >
                             {holding.gain_loss >= 0 ? (
-                              <TrendingUp className="w-4 h-4" />
+                              <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                             ) : (
-                              <TrendingDown className="w-4 h-4" />
+                              <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                             )}
-                            <span className="font-medium">
+                            <span className="font-medium text-xs sm:text-sm">
                               {formatPrice(holding.gain_loss)}
                             </span>
-                            <span className="text-sm">
-                              ({formatPercentage(holding.gain_loss_percent)})
+                            <span className="text-xs sm:text-sm">
+                              ({formatPercentage(holding.gain_loss_percent)}%)
                             </span>
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-white/60 text-sm">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white/60 text-xs sm:text-sm hidden xl:table-cell">
                           {formatDate(holding.purchase_date)}
                         </td>
-                        <td className="py-4 px-4 text-right">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-right">
                           <button
                             onClick={() => handleSellClick(holding)}
-                            className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-lg text-white text-sm font-medium hover:from-red-700 hover:to-orange-700 transition-all"
+                            className="px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-lg text-white text-xs sm:text-sm font-medium hover:from-red-700 hover:to-orange-700 transition-all"
                           >
                             Sell
                           </button>
@@ -1249,15 +1266,17 @@ const PortfolioPage: React.FC = () => {
             transition={{ delay: 0.2 }}
             className="card"
           >
-            <h3 className="text-xl font-semibold text-white mb-6">
+            <h3 className="text-lg sm:text-xl font-semibold text-white mb-4 sm:mb-6">
               Your Orders
             </h3>
 
             {orders.length === 0 ? (
-              <div className="text-center py-12">
-                <Clock className="w-16 h-16 mx-auto mb-4 text-white/30" />
-                <p className="text-white/60 text-lg mb-2">No orders yet</p>
-                <p className="text-white/40 text-sm mb-4">
+              <div className="text-center py-8 sm:py-12">
+                <Clock className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 text-white/30" />
+                <p className="text-white/60 text-base sm:text-lg mb-2">
+                  No orders yet
+                </p>
+                <p className="text-white/40 text-xs sm:text-sm mb-3 sm:mb-4">
                   Place an order to buy stocks
                 </p>
                 <button
@@ -1268,38 +1287,38 @@ const PortfolioPage: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto -mx-3 sm:mx-0">
+                <table className="w-full min-w-[800px]">
                   <thead>
                     <tr className="border-b border-white/10">
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Stock
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Transaction
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Order Type
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Quantity
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden md:table-cell">
                         Target Price
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden lg:table-cell">
                         Current Price
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Status
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden lg:table-cell">
                         Executed Price
                       </th>
-                      <th className="text-left py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-left py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm hidden xl:table-cell">
                         Created
                       </th>
-                      <th className="text-right py-4 px-4 text-white/60 font-medium text-sm">
+                      <th className="text-right py-2 sm:py-4 px-2 sm:px-4 text-white/60 font-medium text-xs sm:text-sm">
                         Actions
                       </th>
                     </tr>
@@ -1313,22 +1332,22 @@ const PortfolioPage: React.FC = () => {
                         transition={{ delay: 0.2 + index * 0.05 }}
                         className="border-b border-white/5 hover:bg-white/5 transition-colors"
                       >
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <Link
                             to={`/stocks/${order.stock_symbol}`}
                             className="block"
                           >
-                            <p className="font-semibold text-white">
+                            <p className="font-semibold text-white text-sm sm:text-base">
                               {order.stock_symbol}
                             </p>
-                            <p className="text-sm text-white/60 line-clamp-1">
+                            <p className="text-xs sm:text-sm text-white/60 line-clamp-1">
                               {order.stock_details?.name || "N/A"}
                             </p>
                           </Link>
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
+                            className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium ${
                               order.transaction_type === "buy"
                                 ? "bg-green-500/20 text-green-400"
                                 : "bg-red-500/20 text-red-400"
@@ -1337,9 +1356,9 @@ const PortfolioPage: React.FC = () => {
                             {order.transaction_type === "buy" ? "Buy" : "Sell"}
                           </span>
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
+                            className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium ${
                               order.order_type === "market"
                                 ? "bg-blue-500/20 text-blue-400"
                                 : "bg-purple-500/20 text-purple-400"
@@ -1350,18 +1369,18 @@ const PortfolioPage: React.FC = () => {
                               : "Target"}
                           </span>
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base">
                           {order.quantity.toLocaleString()}
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base hidden md:table-cell">
                           {order.target_price
                             ? formatPrice(order.target_price)
                             : "N/A"}
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 hidden lg:table-cell">
                           {order.current_price ? (
                             <div>
-                              <p className="text-white">
+                              <p className="text-white text-sm sm:text-base">
                                 {formatPrice(order.current_price.close_price)}
                               </p>
                               {order.order_type === "target" &&
@@ -1378,40 +1397,40 @@ const PortfolioPage: React.FC = () => {
                                 )}
                             </div>
                           ) : (
-                            <span className="text-white/40">N/A</span>
+                            <span className="text-white/40 text-sm">N/A</span>
                           )}
                         </td>
-                        <td className="py-4 px-4">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4">
                           <div
-                            className={`flex items-center space-x-2 px-2 py-1 rounded ${getStatusColor(
+                            className={`flex items-center space-x-1 sm:space-x-2 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded ${getStatusColor(
                               order.status
                             )}`}
                           >
                             {getStatusIcon(order.status)}
-                            <span className="text-sm font-medium capitalize">
+                            <span className="text-xs sm:text-sm font-medium capitalize">
                               {order.status.replace("_", " ")}
                             </span>
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-white">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white text-sm sm:text-base hidden lg:table-cell">
                           {order.executed_price
                             ? formatPrice(order.executed_price)
                             : "—"}
                         </td>
-                        <td className="py-4 px-4 text-white/60 text-sm">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-white/60 text-xs sm:text-sm hidden xl:table-cell">
                           {formatDate(order.created_at)}
                         </td>
-                        <td className="py-4 px-4 text-right">
+                        <td className="py-2 sm:py-4 px-2 sm:px-4 text-right">
                           {order.status === "waiting" && (
                             <button
                               onClick={() => handleCancelOrder(order.id)}
-                              className="text-red-400 hover:text-red-300 text-sm font-medium"
+                              className="text-red-400 hover:text-red-300 text-xs sm:text-sm font-medium"
                             >
                               Cancel
                             </button>
                           )}
                           {order.status === "done" && (
-                            <span className="text-green-400 text-sm">
+                            <span className="text-green-400 text-xs sm:text-sm">
                               Completed
                             </span>
                           )}
