@@ -269,7 +269,7 @@ class RuleEvaluator:
             logger.exception("Error comparing values")
             return False
         else:
-            return False
+            return False  # Unknown operator case
 
     def _to_number(self, value: Any) -> float | None:
         """Convert value to number."""
