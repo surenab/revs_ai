@@ -2821,11 +2821,7 @@ const BotExecutionsTab: React.FC<{
   executions: TradingBotExecution[];
   onRefresh: () => void;
   navigate: (path: string) => void;
-}> = ({ executions, onRefresh, navigate }) => {
-  const [selectedExecution, setSelectedExecution] = useState<string | null>(
-    null
-  );
-
+}> = ({ executions, onRefresh }) => {
   const getActionIcon = (action: string) => {
     switch (action) {
       case "buy":
@@ -2844,299 +2840,6 @@ const BotExecutionsTab: React.FC<{
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
     }).format(price);
-  };
-
-  const renderExecutionDetails = (execution: TradingBotExecution) => {
-    return (
-      <div className="space-y-4 mt-4 pt-4 border-t border-gray-600">
-        {/* Indicators */}
-        {execution.indicators_data &&
-          Object.keys(execution.indicators_data).length > 0 && (
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
-              <h4 className="text-sm font-semibold text-white mb-3">
-                Technical Indicators
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {Object.entries(execution.indicators_data).map(
-                  ([key, value]: [string, any]) => {
-                    // Handle different value formats
-                    let displayValue: string | number | null = null;
-
-                    if (value === null || value === undefined) {
-                      displayValue = null;
-                    } else if (
-                      typeof value === "object" &&
-                      !Array.isArray(value)
-                    ) {
-                      // Handle object format like {current: 50.5, values: [...]}
-                      if (
-                        value.current !== null &&
-                        value.current !== undefined
-                      ) {
-                        displayValue =
-                          typeof value.current === "number"
-                            ? value.current
-                            : value.current;
-                      } else if (
-                        value.value !== null &&
-                        value.value !== undefined
-                      ) {
-                        displayValue =
-                          typeof value.value === "number"
-                            ? value.value
-                            : value.value;
-                      } else {
-                        // Try to get first numeric value from object
-                        const numericValue = Object.values(value).find(
-                          (v) => typeof v === "number" && v !== null
-                        );
-                        displayValue = numericValue as number | null;
-                      }
-                    } else if (typeof value === "number") {
-                      displayValue = value;
-                    } else if (Array.isArray(value) && value.length > 0) {
-                      // Get last value from array
-                      const lastValue = value[value.length - 1];
-                      displayValue =
-                        typeof lastValue === "number" ? lastValue : null;
-                    } else {
-                      displayValue = String(value);
-                    }
-
-                    return (
-                      <div key={key} className="bg-gray-700/50 rounded p-2">
-                        <p className="text-xs text-gray-400 mb-1">
-                          {key.replace(/_/g, " ").toUpperCase()}
-                        </p>
-                        {displayValue !== null ? (
-                          <p className="text-sm font-medium text-white">
-                            {typeof displayValue === "number"
-                              ? displayValue.toFixed(2)
-                              : displayValue}
-                          </p>
-                        ) : (
-                          <p className="text-sm text-gray-500">N/A</p>
-                        )}
-                      </div>
-                    );
-                  }
-                )}
-              </div>
-            </div>
-          )}
-
-        {/* Patterns */}
-        {execution.patterns_detected &&
-          Object.keys(execution.patterns_detected).length > 0 && (
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
-              <h4 className="text-sm font-semibold text-white mb-3">
-                Detected Patterns (
-                {Object.keys(execution.patterns_detected).length})
-              </h4>
-              <div className="space-y-2">
-                {Object.entries(execution.patterns_detected).map(
-                  ([key, pattern]: [string, any]) => (
-                    <div key={key} className="bg-gray-700/50 rounded p-2">
-                      <p className="text-sm font-medium text-white capitalize">
-                        {pattern.pattern || pattern.name || key}
-                      </p>
-                      {pattern.confidence && (
-                        <p className="text-xs text-gray-400">
-                          Confidence: {(pattern.confidence * 100).toFixed(1)}%
-                        </p>
-                      )}
-                      {pattern.signal && (
-                        <p className="text-xs text-gray-400 capitalize">
-                          Signal: {pattern.signal}
-                        </p>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-          )}
-
-        {/* Signal History */}
-        {execution.signal_history && (
-          <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
-            <h4 className="text-sm font-semibold text-white mb-3">
-              Signal Analysis
-            </h4>
-            <div className="space-y-3">
-              {/* ML Signals */}
-              {execution.signal_history.ml_signals?.predictions &&
-                execution.signal_history.ml_signals.predictions.length > 0 && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-2">
-                      ML Model Predictions
-                    </p>
-                    <div className="space-y-1">
-                      {execution.signal_history.ml_signals.predictions.map(
-                        (pred: any, idx: number) => (
-                          <div
-                            key={idx}
-                            className="bg-gray-700/50 rounded p-2 text-xs"
-                          >
-                            <span className="text-white font-medium">
-                              {pred.model_name || `Model ${idx + 1}`}:
-                            </span>{" "}
-                            <span className="text-gray-300 capitalize">
-                              {pred.action}
-                            </span>
-                            {pred.confidence && (
-                              <span className="text-gray-400 ml-2">
-                                ({(pred.confidence * 100).toFixed(1)}%)
-                              </span>
-                            )}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-
-              {/* Social Signals */}
-              {execution.signal_history.social_signals &&
-                Object.keys(execution.signal_history.social_signals).length >
-                  0 && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-2">
-                      Social Media Sentiment
-                    </p>
-                    <div className="bg-gray-700/50 rounded p-2 text-xs text-gray-300">
-                      {execution.signal_history.social_signals.action && (
-                        <span className="capitalize">
-                          {execution.signal_history.social_signals.action}
-                        </span>
-                      )}
-                      {execution.signal_history.social_signals.confidence && (
-                        <span className="ml-2">
-                          (
-                          {(
-                            execution.signal_history.social_signals.confidence *
-                            100
-                          ).toFixed(1)}
-                          %)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-              {/* News Signals */}
-              {execution.signal_history.news_signals &&
-                Object.keys(execution.signal_history.news_signals).length >
-                  0 && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-2">News Sentiment</p>
-                    <div className="bg-gray-700/50 rounded p-2 text-xs text-gray-300">
-                      {execution.signal_history.news_signals.action && (
-                        <span className="capitalize">
-                          {execution.signal_history.news_signals.action}
-                        </span>
-                      )}
-                      {execution.signal_history.news_signals.confidence && (
-                        <span className="ml-2">
-                          (
-                          {(
-                            execution.signal_history.news_signals.confidence *
-                            100
-                          ).toFixed(1)}
-                          %)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-              {/* Aggregated Signal */}
-              {execution.signal_history.aggregated_signal && (
-                <div>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Aggregated Signal
-                  </p>
-                  <div className="bg-gray-700/50 rounded p-2 text-xs text-gray-300">
-                    {execution.signal_history.aggregated_signal.reason ||
-                      "No reason provided"}
-                  </div>
-                  {execution.signal_history.aggregated_signal.action_scores && (
-                    <div className="mt-2 space-y-1">
-                      {Object.entries(
-                        execution.signal_history.aggregated_signal.action_scores
-                      ).map(([action, score]: [string, any]) => (
-                        <div
-                          key={action}
-                          className="flex justify-between text-xs"
-                        >
-                          <span className="text-gray-400 capitalize">
-                            {action}:
-                          </span>
-                          <span className="text-white">
-                            {(score * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Decision Confidence */}
-              {execution.signal_history.decision_confidence !== null &&
-                execution.signal_history.decision_confidence !== undefined && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Decision Confidence:</span>
-                    <span className="text-white">
-                      {(
-                        execution.signal_history.decision_confidence * 100
-                      ).toFixed(1)}
-                      %
-                    </span>
-                  </div>
-                )}
-            </div>
-          </div>
-        )}
-
-        {/* Executed Order */}
-        {execution.executed_order && (
-          <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
-            <h4 className="text-sm font-semibold text-white mb-3">
-              Executed Order
-            </h4>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Order ID:</span>
-                <span className="text-white font-mono text-xs">
-                  {execution.executed_order.id}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Quantity:</span>
-                <span className="text-white">
-                  {execution.executed_order.quantity}
-                </span>
-              </div>
-              {execution.executed_order.executed_price && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Executed Price:</span>
-                  <span className="text-white">
-                    {formatPrice(execution.executed_order.executed_price)}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-gray-400">Status:</span>
-                <span className="text-green-400 capitalize">
-                  {execution.executed_order.status}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -3168,16 +2871,9 @@ const BotExecutionsTab: React.FC<{
               key={execution.id}
               className="bg-gray-700/50 rounded-lg p-3 sm:p-4 border border-gray-600"
             >
-              {/* Clickable Header */}
+              {/* Header */}
               <div className="flex items-center gap-2 mb-2">
-                <button
-                  onClick={() =>
-                    setSelectedExecution(
-                      selectedExecution === execution.id ? null : execution.id
-                    )
-                  }
-                  className="flex-1 text-left"
-                >
+                <div className="flex-1">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-0">
                     <div className="flex items-center gap-2 sm:gap-3">
                       {getActionIcon(execution.action)}
@@ -3209,14 +2905,9 @@ const BotExecutionsTab: React.FC<{
                           </p>
                         )}
                       </div>
-                      {selectedExecution === execution.id ? (
-                        <ArrowUp className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <ArrowDown className="w-5 h-5 text-gray-400" />
-                      )}
                     </div>
                   </div>
-                </button>
+                </div>
                 <button
                   onClick={() =>
                     window.open(
@@ -3281,10 +2972,6 @@ const BotExecutionsTab: React.FC<{
                   </div>
                 )}
               </div>
-
-              {/* Expandable Details */}
-              {selectedExecution === execution.id &&
-                renderExecutionDetails(execution)}
             </div>
           ))}
         </div>

@@ -364,8 +364,8 @@ def detect_head_and_shoulders(data: list[dict]) -> list[PatternMatch]:
             # Check if peaks form head and shoulders pattern
             peaks = sorted(peaks, key=lambda x: x[0])[-3:]  # Last 3 peaks
             left_shoulder_idx, left_shoulder_high = peaks[0]
-            head_idx, head_high = peaks[1]
-            right_shoulder_idx, right_shoulder_high = peaks[2]
+            _, head_high = peaks[1]
+            _, right_shoulder_high = peaks[2]
 
             # Head should be higher than both shoulders
             # Shoulders should be at similar levels
