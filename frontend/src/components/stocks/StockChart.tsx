@@ -686,13 +686,14 @@ const StockChart: React.FC<StockChartProps> = ({
       } else {
         const date = parseISO(timestamp);
 
-        // For 1D period, show time (with seconds for tick data)
+        // For 1D period, show date and time (with seconds for tick data)
         if (period === "1D") {
           // Check if this is tick data (has 'price' field instead of 'close_price')
           const isTickData = "price" in item && !("close_price" in item);
+          // Show date and time: "MMM dd HH:mm:ss" or "MMM dd HH:mm"
           formattedTime = isTickData
-            ? format(date, "HH:mm:ss")
-            : format(date, "HH:mm");
+            ? format(date, "MMM dd HH:mm:ss")
+            : format(date, "MMM dd HH:mm");
         }
         // For periods up to 1 month, show date and time
         else if (["5D", "1M"].includes(period)) {
@@ -1677,6 +1678,19 @@ const StockChart: React.FC<StockChartProps> = ({
           </h3>
           <p className="text-white/60 text-sm">
             {processedData.length} data points
+            {period === "1D" && processedData.length > 0 && (
+              <>
+                {" • "}
+                {(() => {
+                  const firstTimestamp = processedData[0]?.fullTime;
+                  if (firstTimestamp) {
+                    const date = parseISO(firstTimestamp);
+                    return format(date, "MMM dd, yyyy");
+                  }
+                  return "";
+                })()}
+              </>
+            )}
           </p>
         </div>
 

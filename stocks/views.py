@@ -557,6 +557,30 @@ class StockTickDataView(APIView):
         trade_type = validated_data["trade_type"]
         market_hours_only = validated_data["market_hours_only"]
 
+        # If both start_time and end_time are provided (1D period from frontend),
+        # find the last available day with tick data instead of using current day
+        if start_time and end_time:
+            # Find the last available day with tick data for this stock
+            last_tick = (
+                StockTick.objects.filter(stock=stock)
+                .order_by("-timestamp")
+                .first()
+            )
+            
+            if last_tick:
+                # Get the date of the last available tick
+                last_tick_date = last_tick.timestamp.date()
+                
+                # Set start_time to beginning of that day (00:00:00)
+                start_time = timezone.make_aware(
+                    datetime.combine(last_tick_date, datetime.min.time())
+                )
+                # Set end_time to beginning of next day (exclusive) to get all ticks of the last day
+                next_day = last_tick_date + timedelta(days=1)
+                end_time = timezone.make_aware(
+                    datetime.combine(next_day, datetime.min.time())
+                )
+
         # Build query
         queryset = StockTick.objects.filter(stock=stock)
 

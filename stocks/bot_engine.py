@@ -481,13 +481,17 @@ class TradingBot:
             logger.error(f"Invalid action: {action}")
             return None
 
-        # Get current price
-        latest_price = stock.latest_price
-        if not latest_price:
-            logger.error(f"No price data for {stock.symbol}")
+        # Get current price from latest tick
+        latest_tick = (
+            StockTick.objects.filter(stock=stock)
+            .order_by("-timestamp")
+            .first()
+        )
+        if not latest_tick or not latest_tick.price:
+            logger.error(f"No tick data for {stock.symbol}")
             return None
 
-        current_price = latest_price.close_price
+        current_price = latest_tick.price
 
         # Calculate quantity
         if action == "buy":
@@ -577,23 +581,87 @@ class TradingBot:
         return order
 
     def _get_price_data(self, stock: Stock, limit: int = 200) -> list[dict]:
-        """Get price data for stock (last N days)."""
-        prices = StockPrice.objects.filter(stock=stock, interval="1d").order_by(
-            "-date"
-        )[:limit]
+        """Get price data for stock from StockTick model, aggregated into OHLCV candles."""
+        from collections import defaultdict
+        from datetime import timedelta
 
-        return [
-            {
-                "symbol": stock.symbol,
-                "open_price": price.open_price,
-                "high_price": price.high_price,
-                "low_price": price.low_price,
-                "close_price": price.close_price,
-                "volume": price.volume,
-                "date": price.date.isoformat() if price.date else None,
+        # Get recent tick data (limit * 288 ticks per day for 5-minute intervals)
+        # Assuming 5-minute intervals: 288 ticks per day (24 hours * 60 minutes / 5)
+        tick_limit = limit * 288
+        ticks = list(
+            StockTick.objects.filter(stock=stock)
+            .order_by("-timestamp")[:tick_limit]
+        )
+
+        if not ticks:
+            logger.warning(f"No tick data found for {stock.symbol}")
+            return []
+
+        # Aggregate ticks into 5-minute OHLCV candles
+        # Group ticks by 5-minute intervals
+        candles = defaultdict(
+            lambda: {
+                "open": None,
+                "high": None,
+                "low": None,
+                "close": None,
+                "volume": 0,
+                "timestamp": None,
             }
-            for price in reversed(prices)  # Reverse to get chronological order
-        ]
+        )
+
+        for tick in reversed(ticks):  # Process in chronological order
+            # Round timestamp to nearest 5-minute interval
+            tick_time = tick.timestamp
+            # Round down to nearest 5 minutes
+            rounded_minute = (tick_time.minute // 5) * 5
+            candle_time = tick_time.replace(minute=rounded_minute, second=0, microsecond=0)
+            candle_key = candle_time.isoformat()
+
+            price = float(tick.price) if tick.price else None
+            if price is None:
+                continue
+
+            candle = candles[candle_key]
+
+            # Set open price (first tick in the interval)
+            if candle["open"] is None:
+                candle["open"] = price
+                candle["timestamp"] = candle_time
+
+            # Update high and low
+            if candle["high"] is None or price > candle["high"]:
+                candle["high"] = price
+            if candle["low"] is None or price < candle["low"]:
+                candle["low"] = price
+
+            # Set close price (last tick in the interval)
+            candle["close"] = price
+
+            # Accumulate volume
+            candle["volume"] += tick.volume or 0
+
+        # Convert to list format expected by indicators
+        price_data = []
+        for candle_key in sorted(candles.keys()):  # Sort chronologically
+            candle = candles[candle_key]
+            if candle["open"] is not None:
+                price_data.append(
+                    {
+                        "symbol": stock.symbol,
+                        "open_price": Decimal(str(candle["open"])),
+                        "high_price": Decimal(str(candle["high"])),
+                        "low_price": Decimal(str(candle["low"])),
+                        "close_price": Decimal(str(candle["close"])),
+                        "volume": candle["volume"],
+                        "date": candle["timestamp"].date().isoformat()
+                        if candle["timestamp"]
+                        else None,
+                    }
+                )
+
+        # Limit to requested number of candles
+        return price_data[-limit:] if len(price_data) > limit else price_data
 
     def _get_last_day_tick_data(self, stock: Stock) -> list[dict]:
         """Get tick data for the last trading day."""
