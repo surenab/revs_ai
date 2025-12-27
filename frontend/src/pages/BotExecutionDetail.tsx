@@ -501,6 +501,18 @@ const BotExecutionDetail: React.FC = () => {
         ? Object.entries(execution.indicators_data)
         : Object.entries(execution.indicators_data).slice(0, 6);
 
+      // Get indicator weight from decision details
+      const decisionDetails = (execution as any).decision_details || {};
+      const defaultWeights = {
+        ml: 0.4,
+        indicator: 0.3,
+        pattern: 0.15,
+        social_media: 0.1,
+        news: 0.05,
+      };
+      const signalWeights = decisionDetails.signal_weights || defaultWeights;
+      const indicatorWeight = signalWeights.indicator || 0.3;
+
       const renderIndicatorValue = (value: any): string | number | null => {
         if (value === null || value === undefined) {
           return null;
@@ -968,9 +980,21 @@ const BotExecutionDetail: React.FC = () => {
                               {(
                                 (toNumber(signal.confidence) || 0) *
                                 (toNumber(signal.strength) || 0) *
+                                indicatorWeight *
                                 100
-                              ).toFixed(1)}
-                              % × indicator_weight
+                              ).toFixed(2)}
+                              %{" "}
+                              <span className="text-gray-400">
+                                (confidence × strength × indicator_weight ={" "}
+                                {(
+                                  (toNumber(signal.confidence) || 0) * 100
+                                ).toFixed(1)}
+                                % ×{" "}
+                                {(
+                                  (toNumber(signal.strength) || 0) * 100
+                                ).toFixed(1)}
+                                % × {(indicatorWeight * 100).toFixed(0)}%)
+                              </span>
                             </p>
                           </div>
                         </div>
@@ -1099,6 +1123,37 @@ const BotExecutionDetail: React.FC = () => {
       execution.patterns_detected &&
       Object.keys(execution.patterns_detected).length > 0
     ) {
+      // Get pattern weight from decision details
+      const decisionDetails = (execution as any).decision_details || {};
+      const defaultWeights = {
+        ml: 0.4,
+        indicator: 0.3,
+        pattern: 0.15,
+        social_media: 0.1,
+        news: 0.05,
+      };
+      const signalWeights = decisionDetails.signal_weights || defaultWeights;
+      const patternWeight = signalWeights.pattern || 0.15;
+
+      // Get pattern signals from signal history to calculate contributions
+      const patternSignalsFromHistory = signalHistory
+        ? Array.isArray(signalHistory.pattern_signals?.patterns)
+          ? signalHistory.pattern_signals.patterns
+          : Array.isArray(signalHistory.pattern_signals)
+          ? signalHistory.pattern_signals
+          : []
+        : [];
+
+      // Create a map of pattern signals by pattern name for quick lookup
+      const patternSignalMap = new Map();
+      patternSignalsFromHistory.forEach((signal: any) => {
+        const patternName =
+          signal.pattern_name || signal.pattern || signal.name;
+        if (patternName) {
+          patternSignalMap.set(patternName.toLowerCase(), signal);
+        }
+      });
+
       steps.push({
         id: "patterns",
         title: "Chart Patterns Detected",
@@ -1114,42 +1169,130 @@ const BotExecutionDetail: React.FC = () => {
         details: (
           <div className="mt-2 space-y-2 max-h-96 overflow-y-auto">
             {Object.entries(execution.patterns_detected).map(
-              ([key, pattern]: [string, any]) => (
-                <div key={key} className="bg-gray-700/50 rounded p-2">
-                  <p className="text-sm font-medium text-white capitalize">
-                    {pattern.pattern_name ||
-                      pattern.pattern ||
-                      pattern.name ||
-                      key}
-                  </p>
-                  {pattern.description && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {pattern.description}
+              ([key, pattern]: [string, any]) => {
+                const patternName =
+                  pattern.pattern_name ||
+                  pattern.pattern ||
+                  pattern.name ||
+                  key;
+                const patternSignal = patternSignalMap.get(
+                  patternName.toLowerCase()
+                );
+                const confidence = toNumber(pattern.confidence) || 0;
+                const strength = confidence; // For patterns, strength equals confidence
+                const action =
+                  pattern.signal || patternSignal?.signal || "hold";
+                const contribution =
+                  confidence !== null
+                    ? (confidence * strength * patternWeight * 100).toFixed(2)
+                    : "0.00";
+
+                return (
+                  <div
+                    key={key}
+                    className="bg-gray-700/50 rounded p-3 border border-gray-600"
+                  >
+                    <p className="text-sm font-medium text-white capitalize">
+                      {patternName}
                     </p>
-                  )}
-                  <div className="flex gap-4 mt-2">
-                    {pattern.confidence &&
-                      (() => {
-                        const confidence = toNumber(pattern.confidence);
-                        return confidence !== null ? (
-                          <p className="text-xs text-gray-400">
-                            Confidence: {(confidence * 100).toFixed(1)}%
+                    {pattern.description && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {pattern.description}
+                      </p>
+                    )}
+                    <div className="mt-2 space-y-2">
+                      <div className="flex gap-4 flex-wrap">
+                        {confidence !== null && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-400">
+                              Confidence:
+                            </span>
+                            <span className="text-xs text-white font-medium">
+                              {(confidence * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                        {action && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-400">
+                              Signal:
+                            </span>
+                            <span
+                              className={`text-xs font-medium capitalize ${
+                                action === "bullish" || action === "buy"
+                                  ? "text-green-400"
+                                  : action === "bearish" || action === "sell"
+                                  ? "text-red-400"
+                                  : "text-yellow-400"
+                              }`}
+                            >
+                              {action}
+                            </span>
+                          </div>
+                        )}
+                        {pattern.candles && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-400">
+                              Candles:
+                            </span>
+                            <span className="text-xs text-white">
+                              {pattern.candles}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Pattern Contribution to Score */}
+                      {confidence !== null && (
+                        <div className="mt-2 pt-2 border-t border-gray-600">
+                          <p className="text-xs text-gray-500 mb-1">
+                            This pattern contributes to the final decision:
                           </p>
-                        ) : null;
-                      })()}
-                    {pattern.signal && (
-                      <p className="text-xs text-gray-400 capitalize">
-                        Signal: {pattern.signal}
-                      </p>
-                    )}
-                    {pattern.candles && (
-                      <p className="text-xs text-gray-400">
-                        Candles: {pattern.candles}
-                      </p>
-                    )}
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">
+                                Contribution to{" "}
+                                {action === "bullish" || action === "buy"
+                                  ? "BUY"
+                                  : action === "bearish" || action === "sell"
+                                  ? "SELL"
+                                  : "HOLD"}
+                                :
+                              </span>
+                              <FormulaTooltip
+                                formula={`contribution = confidence × strength × pattern_weight × 100`}
+                                description={`Raw contribution before normalization. For patterns, strength equals confidence. This value is then divided by total_weight to get the final normalized percentage.`}
+                              >
+                                <span className="text-white font-medium">
+                                  {contribution}%
+                                </span>
+                              </FormulaTooltip>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">
+                                Pattern Weight:
+                              </span>
+                              <span className="text-white">
+                                {(patternWeight * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1 pt-1 border-t border-gray-700">
+                              <span className="text-gray-400">
+                                Calculation: {(confidence || 0).toFixed(2)} ×{" "}
+                                {(strength || 0).toFixed(2)} ×{" "}
+                                {patternWeight.toFixed(2)} × 100 ={" "}
+                                <span className="text-white font-medium">
+                                  {contribution}%
+                                </span>
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
+                );
+              }
             )}
           </div>
         ),
@@ -2063,93 +2206,147 @@ const BotExecutionDetail: React.FC = () => {
               })()}
 
               {/* Pattern Signals Contribution */}
-              {signalHistory.pattern_signals &&
-                Array.isArray(signalHistory.pattern_signals) &&
-                signalHistory.pattern_signals.length > 0 && (
+              {(() => {
+                const patternSignals = Array.isArray(
+                  signalHistory.pattern_signals?.patterns
+                )
+                  ? signalHistory.pattern_signals.patterns
+                  : Array.isArray(signalHistory.pattern_signals)
+                  ? signalHistory.pattern_signals
+                  : [];
+
+                if (patternSignals.length === 0) return null;
+
+                const decisionDetails =
+                  (execution as any).decision_details || {};
+                const defaultWeights = {
+                  ml: 0.4,
+                  indicator: 0.3,
+                  pattern: 0.15,
+                  social_media: 0.1,
+                  news: 0.05,
+                };
+                const signalWeights =
+                  decisionDetails.signal_weights || defaultWeights;
+                const patternWeight = signalWeights.pattern || 0.15;
+
+                return (
                   <div className="mb-3">
                     <p className="text-xs text-gray-400 mb-2 font-medium">
-                      Pattern Signals Contribution (
-                      {signalHistory.pattern_signals.length})
+                      Pattern Signals Contribution ({patternSignals.length})
                     </p>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {signalHistory.pattern_signals.map(
-                        (signal: any, idx: number) => {
-                          const confidence = toNumber(signal.confidence);
-                          const strength = confidence || 0;
-                          const action = signal.signal || "hold";
-                          const patternWeight = 0.15; // Default weight for patterns
-                          const contribution =
-                            confidence !== null
-                              ? (
-                                  confidence *
-                                  strength *
-                                  patternWeight *
-                                  100
-                                ).toFixed(2)
-                              : "0.00";
+                      {patternSignals.map((signal: any, idx: number) => {
+                        const confidence = toNumber(signal.confidence) || 0;
+                        const strength = confidence; // For patterns, strength equals confidence
+                        const action = signal.signal || "hold";
+                        const contribution =
+                          confidence !== null
+                            ? (
+                                confidence *
+                                strength *
+                                patternWeight *
+                                100
+                              ).toFixed(2)
+                            : "0.00";
 
-                          return (
-                            <div
-                              key={idx}
-                              className="bg-gray-800/50 rounded p-2 border border-gray-700"
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-medium text-white">
-                                  {signal.pattern_name ||
-                                    signal.pattern ||
-                                    `Pattern ${idx + 1}`}
-                                </span>
-                                <span
-                                  className={`text-xs px-2 py-0.5 rounded capitalize ${
-                                    action === "bullish" || action === "buy"
-                                      ? "bg-green-900/30 text-green-300"
-                                      : action === "bearish" ||
-                                        action === "sell"
-                                      ? "bg-red-900/30 text-red-300"
-                                      : "bg-gray-700 text-gray-300"
-                                  }`}
-                                >
-                                  {action}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
-                                <div>
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-gray-800/50 rounded p-2 border border-gray-700"
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-medium text-white">
+                                {signal.pattern_name ||
+                                  signal.pattern ||
+                                  `Pattern ${idx + 1}`}
+                              </span>
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded capitalize ${
+                                  action === "bullish" || action === "buy"
+                                    ? "bg-green-900/30 text-green-300"
+                                    : action === "bearish" || action === "sell"
+                                    ? "bg-red-900/30 text-red-300"
+                                    : "bg-gray-700 text-gray-300"
+                                }`}
+                              >
+                                {action}
+                              </span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="flex justify-between">
                                   <span className="text-gray-400">
                                     Confidence:
                                   </span>
-                                  <span className="text-white ml-1">
+                                  <span className="text-white font-medium">
                                     {confidence !== null
-                                      ? `${(confidence * 100).toFixed(1)}%`
+                                      ? (confidence * 100).toFixed(1)
                                       : "N/A"}
+                                    %
                                   </span>
                                 </div>
-                                <div>
-                                  <span className="text-gray-400">Weight:</span>
-                                  <span className="text-white ml-1">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-400">
+                                    Strength:
+                                  </span>
+                                  <span className="text-white font-medium">
+                                    {strength !== null
+                                      ? (strength * 100).toFixed(1)
+                                      : "N/A"}
+                                    %
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-400">
+                                    Pattern Weight:
+                                  </span>
+                                  <span className="text-white font-medium">
                                     {(patternWeight * 100).toFixed(0)}%
                                   </span>
                                 </div>
-                                <div className="col-span-2 flex justify-between items-center">
+                                <div className="flex justify-between items-center">
                                   <span className="text-gray-400">
-                                    Contribution:
+                                    Contribution to{" "}
+                                    {action === "bullish" || action === "buy"
+                                      ? "BUY"
+                                      : action === "bearish" ||
+                                        action === "sell"
+                                      ? "SELL"
+                                      : "HOLD"}
+                                    :
                                   </span>
                                   <FormulaTooltip
-                                    formula={`contribution = confidence × confidence × pattern_weight × 100`}
+                                    formula={`contribution = confidence × strength × pattern_weight × 100`}
                                     description={`Raw contribution before normalization. For patterns, strength equals confidence. This value is then divided by total_weight to get the final normalized percentage.`}
                                   >
-                                    <span className="text-white ml-1 font-medium">
+                                    <span className="text-white font-bold">
                                       {contribution}%
                                     </span>
                                   </FormulaTooltip>
                                 </div>
                               </div>
+                              <div className="pt-2 border-t border-gray-600">
+                                <p className="text-xs text-gray-500">
+                                  <span className="text-gray-400">
+                                    Calculation:{" "}
+                                  </span>
+                                  {(confidence || 0).toFixed(2)} ×{" "}
+                                  {(strength || 0).toFixed(2)} ×{" "}
+                                  {patternWeight.toFixed(2)} × 100 ={" "}
+                                  <span className="text-white font-medium">
+                                    {contribution}%
+                                  </span>
+                                </p>
+                              </div>
                             </div>
-                          );
-                        }
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
+                );
+              })()}
 
               {/* ML Signals */}
               {signalHistory.ml_signals &&
