@@ -4,6 +4,7 @@ Main orchestration for trading bot analysis and execution.
 """
 
 import logging
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -18,6 +19,7 @@ from .models import (
     Order,
     Stock,
     StockPrice,
+    StockTick,
     TradingBotConfig,
     TradingBotExecution,
 )
@@ -574,8 +576,8 @@ class TradingBot:
 
         return order
 
-    def _get_price_data(self, stock: Stock, limit: int = 100) -> list[dict]:
-        """Get price data for stock."""
+    def _get_price_data(self, stock: Stock, limit: int = 200) -> list[dict]:
+        """Get price data for stock (last N days)."""
         prices = StockPrice.objects.filter(stock=stock, interval="1d").order_by(
             "-date"
         )[:limit]
@@ -591,6 +593,56 @@ class TradingBot:
                 "date": price.date.isoformat() if price.date else None,
             }
             for price in reversed(prices)  # Reverse to get chronological order
+        ]
+
+    def _get_last_day_tick_data(self, stock: Stock) -> list[dict]:
+        """Get tick data for the last trading day."""
+        from datetime import datetime
+
+        # Get the last trading day (today or most recent day with data)
+        last_price = (
+            StockPrice.objects.filter(stock=stock, interval="1d")
+            .order_by("-date")
+            .first()
+        )
+        if not last_price or not last_price.date:
+            return []
+
+        # Get tick data for the last trading day
+        start_of_day = timezone.make_aware(
+            datetime.combine(last_price.date, datetime.min.time())
+        )
+        end_of_day = start_of_day + timedelta(days=1)
+
+        ticks = (
+            StockTick.objects.filter(
+                stock=stock, timestamp__gte=start_of_day, timestamp__lt=end_of_day
+            )
+            .order_by("timestamp")
+            .values(
+                "price",
+                "volume",
+                "bid_price",
+                "ask_price",
+                "bid_size",
+                "ask_size",
+                "timestamp",
+            )
+        )
+
+        return [
+            {
+                "price": float(tick["price"]) if tick["price"] else None,
+                "volume": tick["volume"],
+                "bid_price": float(tick["bid_price"]) if tick["bid_price"] else None,
+                "ask_price": float(tick["ask_price"]) if tick["ask_price"] else None,
+                "bid_size": tick["bid_size"],
+                "ask_size": tick["ask_size"],
+                "timestamp": tick["timestamp"].isoformat()
+                if tick["timestamp"]
+                else None,
+            }
+            for tick in ticks
         ]
 
     def _calculate_indicators(self, price_data: list[dict]) -> dict:  # noqa: PLR0912, PLR0915
@@ -1032,6 +1084,7 @@ class TradingBot:
     ) -> None:
         """Store signal history for transparency."""
         try:
+            tick_data = self._get_last_day_tick_data(stock)
             BotSignalHistory.objects.create(
                 bot_config=self.bot_config,
                 stock=stock,
@@ -1040,6 +1093,8 @@ class TradingBot:
                     if price_data
                     else {},
                     "count": len(price_data),
+                    "tick_data": tick_data,
+                    "tick_count": len(tick_data),
                 },
                 ml_signals={"predictions": ml_signals, "count": len(ml_signals)},
                 social_signals=social_signals or {},

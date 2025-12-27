@@ -58,6 +58,7 @@ import { PatternGrid } from "../components/bots/PatternGrid";
 import { AggregationMethodSelector } from "../components/bots/AggregationMethodSelector";
 import { RiskScorePreview } from "../components/bots/RiskScorePreview";
 import BotSignalHistoryTab from "../components/bots/BotSignalHistoryTab";
+import StockPriceTooltip from "../components/bots/StockPriceTooltip";
 import {
   TOOLTIPS,
   SIGNAL_SOURCE_WEIGHTS,
@@ -2227,16 +2228,27 @@ const BotOverviewTab: React.FC<{
                   // If stock not found in map, try to find by ID in the stocks array directly
                   const foundStock =
                     stock || stocks.find((s) => s.id === stockId);
+                  if (!foundStock) {
+                    return (
+                      <span
+                        key={stockId}
+                        className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs sm:text-sm"
+                        title={stockId}
+                      >
+                        Stock ID: {stockId}
+                      </span>
+                    );
+                  }
                   return (
-                    <span
+                    <StockPriceTooltip
                       key={stockId}
-                      className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs sm:text-sm"
-                      title={stockId}
+                      stockSymbol={foundStock.symbol}
+                      stockName={foundStock.name}
                     >
-                      {foundStock
-                        ? `${foundStock.symbol} - ${foundStock.name}`
-                        : `Stock ID: ${stockId}`}
-                    </span>
+                      <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs sm:text-sm">
+                        {foundStock.symbol}
+                      </span>
+                    </StockPriceTooltip>
                   );
                 })}
               </div>
@@ -2327,13 +2339,26 @@ const BotOverviewTab: React.FC<{
                       key={key}
                       className="bg-gray-800/50 rounded p-2 border border-gray-600"
                     >
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {indicatorDef && (
+                            <indicatorDef.icon className="w-4 h-4 text-blue-400" />
+                          )}
+                          <span className="text-sm font-medium text-blue-400 capitalize">
+                            {indicatorDef?.name || key}
+                          </span>
+                        </div>
                         {indicatorDef && (
-                          <indicatorDef.icon className="w-4 h-4 text-blue-400" />
+                          <a
+                            href={`/indicators/${indicatorDef.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:text-blue-300 underline flex items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Maximize className="w-3 h-3" />
+                          </a>
                         )}
-                        <span className="text-sm font-medium text-blue-400 capitalize">
-                          {indicatorDef?.name || key}
-                        </span>
                       </div>
                       {thresholds && (
                         <div className="mt-2 pt-2 border-t border-gray-700">
@@ -2431,6 +2456,17 @@ const BotOverviewTab: React.FC<{
                         <span className="text-sm font-medium text-purple-400 capitalize">
                           {patternDef?.name || key}
                         </span>
+                        {patternDef && (
+                          <a
+                            href={`/patterns/${patternDef.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-purple-400 hover:text-purple-300 underline flex items-center gap-1 ml-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Maximize className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
                       <div className="text-xs sm:text-sm text-gray-300">
                         {typeof value === "boolean" ? (

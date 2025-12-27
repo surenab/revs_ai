@@ -23,9 +23,19 @@ import {
   ChevronUp,
   Info,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import { format, subDays } from "date-fns";
 import toast from "react-hot-toast";
-import { botAPI } from "../lib/api";
-import type { TradingBotExecution } from "../lib/api";
+import { botAPI, stockAPI } from "../lib/api";
+import type { TradingBotExecution, StockPrice } from "../lib/api";
 import {
   INDICATORS,
   getIndicatorThresholds,
@@ -207,6 +217,8 @@ const BotExecutionDetail: React.FC = () => {
   const [execution, setExecution] = useState<TradingBotExecution | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
+  const [priceChartData, setPriceChartData] = useState<StockPrice[]>([]);
+  const [isLoadingPriceData, setIsLoadingPriceData] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -219,12 +231,46 @@ const BotExecutionDetail: React.FC = () => {
       setLoading(true);
       const response = await botAPI.getExecutionDetail(id!);
       setExecution(response.data);
+
+      // Fetch price data for chart if execution has stock symbol
+      if (response.data?.stock_symbol) {
+        fetchPriceDataForChart(
+          response.data.stock_symbol,
+          response.data.timestamp
+        );
+      }
     } catch (error) {
       console.error("Failed to fetch execution:", error);
       toast.error("Failed to load execution details");
       navigate("/bots");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPriceDataForChart = async (
+    stockSymbol: string,
+    executionTimestamp: string
+  ) => {
+    try {
+      setIsLoadingPriceData(true);
+      const executionDate = new Date(executionTimestamp);
+      const endDate = executionDate;
+      const startDate = subDays(endDate, 200); // Last 200 days before execution
+
+      const response = await stockAPI.getTimeSeries(stockSymbol, {
+        interval: "1d",
+        start_date: format(startDate, "yyyy-MM-dd"),
+        end_date: format(endDate, "yyyy-MM-dd"),
+        limit: 200,
+      });
+
+      setPriceChartData(response.data.prices || []);
+    } catch (error) {
+      console.error("Failed to fetch price data for chart:", error);
+      setPriceChartData([]);
+    } finally {
+      setIsLoadingPriceData(false);
     }
   };
 
@@ -312,6 +358,16 @@ const BotExecutionDetail: React.FC = () => {
 
     // Step 2: Price Data Retrieved
     if (signalHistory?.price_data_snapshot) {
+      const chartData = priceChartData.map((price) => ({
+        date: format(new Date(price.date), "MMM dd"),
+        fullDate: price.date,
+        close: parseFloat(String(price.close_price)),
+        open: parseFloat(String(price.open_price)),
+        high: parseFloat(String(price.high_price)),
+        low: parseFloat(String(price.low_price)),
+        volume: price.volume,
+      }));
+
       steps.push({
         id: "price_data",
         title: "Price Data Retrieved",
@@ -322,22 +378,111 @@ const BotExecutionDetail: React.FC = () => {
         status: "completed",
         timestamp: signalTimestamp.toISOString(),
         data: signalHistory.price_data_snapshot,
-        details: signalHistory.price_data_snapshot.latest && (
-          <div className="mt-2 space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Latest Close:</span>
-              <span className="text-white">
-                {formatPrice(
-                  signalHistory.price_data_snapshot.latest.close_price || 0
+        details: (
+          <div className="mt-4 space-y-4">
+            {signalHistory.price_data_snapshot.latest && (
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Latest Close:</span>
+                  <span className="text-white">
+                    {formatPrice(
+                      signalHistory.price_data_snapshot.latest.close_price || 0
+                    )}
+                  </span>
+                </div>
+                {signalHistory.price_data_snapshot.latest.volume && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Volume:</span>
+                    <span className="text-white">
+                      {signalHistory.price_data_snapshot.latest.volume.toLocaleString()}
+                    </span>
+                  </div>
                 )}
-              </span>
-            </div>
-            {signalHistory.price_data_snapshot.latest.volume && (
-              <div className="flex justify-between">
-                <span className="text-gray-400">Volume:</span>
-                <span className="text-white">
-                  {signalHistory.price_data_snapshot.latest.volume.toLocaleString()}
-                </span>
+                {signalHistory.price_data_snapshot.tick_count !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Tick Data (Last Day):</span>
+                    <span className="text-white">
+                      {signalHistory.price_data_snapshot.tick_count.toLocaleString()}{" "}
+                      ticks
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Price Chart */}
+            {isLoadingPriceData ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-600 border-t-blue-500"></div>
+              </div>
+            ) : chartData.length > 0 ? (
+              <div className="mt-4">
+                <h4 className="text-sm font-semibold text-white mb-2">
+                  Price Chart (Last 200 Days)
+                </h4>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#9CA3AF"
+                      style={{ fontSize: "12px" }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis
+                      stroke="#9CA3AF"
+                      style={{ fontSize: "12px" }}
+                      domain={["auto", "auto"]}
+                      tickFormatter={(value) => `$${value.toFixed(2)}`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1F2937",
+                        border: "1px solid #374151",
+                        borderRadius: "8px",
+                        color: "#F3F4F6",
+                      }}
+                      labelStyle={{ color: "#9CA3AF" }}
+                      formatter={(value: number) => formatPrice(value)}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="close"
+                      stroke="#10B981"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Close Price"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="high"
+                      stroke="#3B82F6"
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      dot={false}
+                      name="High"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="low"
+                      stroke="#EF4444"
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      dot={false}
+                      name="Low"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-400 text-center py-4">
+                No price data available for chart
               </div>
             )}
           </div>
