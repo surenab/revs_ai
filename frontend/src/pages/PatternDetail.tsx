@@ -8,15 +8,56 @@ import {
   Minus,
   Sparkles,
 } from "lucide-react";
-import { AVAILABLE_CHART_PATTERNS } from "../utils/indicatorsConfig";
+import { PATTERNS } from "../lib/botConstants";
 
 const PatternDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const pattern = useMemo(() => {
-    return AVAILABLE_CHART_PATTERNS.find((p) => p.id === id);
+    return PATTERNS.find((p) => p.id === id);
   }, [id]);
+
+  // Helper to determine signal from pattern
+  const getPatternSignal = (
+    p: typeof pattern
+  ): "bullish" | "bearish" | "neutral" => {
+    if (!p) return "neutral";
+
+    // Bearish patterns
+    if (
+      p.id === "advance_block" ||
+      p.id === "head_and_shoulders" ||
+      p.id === "double_top" ||
+      p.id === "rising_wedge"
+    ) {
+      return "bearish";
+    }
+
+    // Neutral patterns
+    if (p.id === "tri_star" || p.id === "spinning_top") {
+      return "neutral";
+    }
+
+    // Default to bullish for reversal patterns (most are bullish)
+    if (p.patternType === "reversal") {
+      return "bullish";
+    }
+
+    // Continuation patterns are typically bullish
+    return "bullish";
+  };
+
+  // Helper to get color from pattern
+  const getPatternColor = (p: typeof pattern): string => {
+    if (!p) return "#8B5CF6";
+    const signal = getPatternSignal(p);
+    return signal === "bullish"
+      ? "#10B981"
+      : signal === "bearish"
+      ? "#EF4444"
+      : "#F59E0B";
+  };
 
   if (!pattern) {
     return (
@@ -39,6 +80,9 @@ const PatternDetail: React.FC = () => {
     );
   }
 
+  const patternSignal = getPatternSignal(pattern);
+  const patternColor = getPatternColor(pattern);
+
   const signalLabels: Record<string, string> = {
     bullish: "Bullish Pattern",
     bearish: "Bearish Pattern",
@@ -46,7 +90,7 @@ const PatternDetail: React.FC = () => {
   };
 
   const getSignalColor = () => {
-    switch (pattern.signal) {
+    switch (patternSignal) {
       case "bullish":
         return "bg-green-500/20 text-green-400 border-green-500/30";
       case "bearish":
@@ -59,7 +103,7 @@ const PatternDetail: React.FC = () => {
   };
 
   const getSignalIcon = () => {
-    switch (pattern.signal) {
+    switch (patternSignal) {
       case "bullish":
         return <TrendingUp className="w-5 h-5" />;
       case "bearish":
@@ -69,9 +113,10 @@ const PatternDetail: React.FC = () => {
     }
   };
 
-  const relatedPatterns = AVAILABLE_CHART_PATTERNS.filter(
-    (p) => p.signal === pattern.signal && p.id !== pattern.id
-  ).slice(0, 3);
+  const relatedPatterns = PATTERNS.filter((p) => {
+    const pSignal = getPatternSignal(p);
+    return pSignal === patternSignal && p.id !== pattern.id;
+  }).slice(0, 3);
 
   return (
     <div className="min-h-screen p-6">
@@ -93,11 +138,11 @@ const PatternDetail: React.FC = () => {
           <div className="flex items-center gap-4">
             <div
               className="w-16 h-16 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: `${pattern.color}20` }}
+              style={{ backgroundColor: `${patternColor}20` }}
             >
-              <Sparkles
+              <pattern.icon
                 className="w-8 h-8"
-                style={{ color: pattern.color || "#8B5CF6" }}
+                style={{ color: patternColor }}
               />
             </div>
             <div className="flex-1">
@@ -109,7 +154,16 @@ const PatternDetail: React.FC = () => {
                   className={`px-3 py-1 rounded-lg text-sm font-medium border flex items-center gap-2 ${getSignalColor()}`}
                 >
                   {getSignalIcon()}
-                  {signalLabels[pattern.signal]}
+                  {signalLabels[patternSignal]}
+                </span>
+                <span
+                  className={`text-xs px-2 py-1 rounded ${
+                    pattern.patternType === "reversal"
+                      ? "bg-red-900/30 text-red-300"
+                      : "bg-green-900/30 text-green-300"
+                  }`}
+                >
+                  {pattern.patternType}
                 </span>
               </div>
             </div>
@@ -135,22 +189,60 @@ const PatternDetail: React.FC = () => {
             </motion.div>
           )}
 
-          {/* Analysis */}
-          {pattern.analysis && (
+          {/* Formation */}
+          {pattern.formation && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: 0.15 }}
               className="bg-gray-800/50 backdrop-blur-md border border-white/10 rounded-xl p-6"
             >
               <h2 className="text-xl font-semibold text-white mb-3">
-                How to Analyze
+                Pattern Formation
               </h2>
               <p className="text-white/80 leading-relaxed whitespace-pre-line">
-                {pattern.analysis}
+                {pattern.formation}
               </p>
             </motion.div>
           )}
+
+          {/* Reliability & Price Movement */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-gray-800/50 backdrop-blur-md border border-white/10 rounded-xl p-6"
+          >
+            <h2 className="text-xl font-semibold text-white mb-4">
+              Pattern Characteristics
+            </h2>
+            <div className="space-y-3">
+              {pattern.reliability && (
+                <div className="p-4 bg-gray-900/50 rounded-lg border border-white/5">
+                  <h3 className="text-white font-medium mb-2">Reliability</h3>
+                  <p className="text-white/70 text-sm">{pattern.reliability}</p>
+                </div>
+              )}
+              {pattern.priceMovement && (
+                <div className="p-4 bg-gray-900/50 rounded-lg border border-white/5">
+                  <h3 className="text-white font-medium mb-2">
+                    Expected Price Movement
+                  </h3>
+                  <p className="text-white/70 text-sm">
+                    {pattern.priceMovement}
+                  </p>
+                </div>
+              )}
+              {pattern.confidence && (
+                <div className="p-4 bg-gray-900/50 rounded-lg border border-white/5">
+                  <h3 className="text-white font-medium mb-2">
+                    Confidence Assessment
+                  </h3>
+                  <p className="text-white/70 text-sm">{pattern.confidence}</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
 
           {/* Trading Tips */}
           <motion.div
@@ -204,34 +296,38 @@ const PatternDetail: React.FC = () => {
                 Related Patterns
               </h3>
               <div className="space-y-2">
-                {relatedPatterns.map((related) => (
-                  <Link
-                    key={related.id}
-                    to={`/patterns/${related.id}`}
-                    className="block p-3 bg-gray-900/50 rounded hover:bg-gray-900/70 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: related.color }}
-                      />
-                      <span className="text-white/80 text-sm">
-                        {related.name}
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ml-auto ${
-                          related.signal === "bullish"
-                            ? "bg-green-500/20 text-green-400"
-                            : related.signal === "bearish"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-yellow-500/20 text-yellow-400"
-                        }`}
-                      >
-                        {related.signal}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
+                {relatedPatterns.map((related) => {
+                  const relatedSignal = getPatternSignal(related);
+                  const relatedColor = getPatternColor(related);
+                  return (
+                    <Link
+                      key={related.id}
+                      to={`/patterns/${related.id}`}
+                      className="block p-3 bg-gray-900/50 rounded hover:bg-gray-900/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <related.icon
+                          className="w-4 h-4"
+                          style={{ color: relatedColor }}
+                        />
+                        <span className="text-white/80 text-sm">
+                          {related.name}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded ml-auto ${
+                            relatedSignal === "bullish"
+                              ? "bg-green-500/20 text-green-400"
+                              : relatedSignal === "bearish"
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-yellow-500/20 text-yellow-400"
+                          }`}
+                        >
+                          {relatedSignal}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </motion.div>
           )}

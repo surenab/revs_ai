@@ -1,15 +1,48 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, X, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  X,
+  Save,
+  Bot,
+  Wallet,
+  DollarSign,
+  TrendingUp,
+  Shield,
+  AlertTriangle,
+  Maximize,
+  Activity,
+  TrendingDown,
+  Brain,
+  MessageSquare,
+  Newspaper,
+  LineChart,
+  Layers,
+  GitMerge,
+  Gauge,
+  BarChart,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import type {
   TradingBotConfig,
   Stock,
   Portfolio,
   BotCreateRequest,
+  MLModel,
 } from "../lib/api";
-import { botAPI, stockAPI, portfolioAPI } from "../lib/api";
+import { botAPI, stockAPI, portfolioAPI, mlModelAPI } from "../lib/api";
+import { SectionCard } from "../components/bots/SectionCard";
+import { InfoTooltip } from "../components/bots/InfoTooltip";
+import { ThresholdInput } from "../components/bots/ThresholdInput";
+import { SignalWeightSlider } from "../components/bots/SignalWeightSlider";
+import { MLModelSelector } from "../components/bots/MLModelSelector";
+import { SignalSourceToggle } from "../components/bots/SignalSourceToggle";
+import { IndicatorGrid } from "../components/bots/IndicatorGrid";
+import { PatternGrid } from "../components/bots/PatternGrid";
+import { AggregationMethodSelector } from "../components/bots/AggregationMethodSelector";
+import { RiskScorePreview } from "../components/bots/RiskScorePreview";
+import { TOOLTIPS, SIGNAL_SOURCE_WEIGHTS } from "../lib/botConstants";
 
 const EditBot: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +54,7 @@ const EditBot: React.FC = () => {
   const [allStocks, setAllStocks] = useState<Stock[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [allBots, setAllBots] = useState<TradingBotConfig[]>([]);
+  const [mlModels, setMlModels] = useState<MLModel[]>([]);
   const [isLoadingStocks, setIsLoadingStocks] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -40,6 +74,16 @@ const EditBot: React.FC = () => {
     enabled_patterns: {} as Record<string, any>,
     buy_rules: {} as Record<string, any>,
     sell_rules: {} as Record<string, any>,
+    enabled_ml_models: [] as string[],
+    ml_model_weights: {} as Record<string, number>,
+    enable_social_analysis: false,
+    enable_news_analysis: false,
+    signal_aggregation_method: "weighted_average",
+    signal_weights: {} as Record<string, number>,
+    signal_thresholds: {} as Record<string, any>,
+    risk_score_threshold: "80",
+    risk_adjustment_factor: "1.0",
+    risk_based_position_scaling: false,
   });
 
   // Store raw JSON strings to allow typing invalid JSON while editing
@@ -56,6 +100,7 @@ const EditBot: React.FC = () => {
       fetchStocks();
       fetchPortfolio();
       fetchAllBots();
+      fetchMlModels();
     }
   }, [id]);
 
@@ -64,32 +109,8 @@ const EditBot: React.FC = () => {
     const fetchAllStocks = async () => {
       setIsLoadingStocks(true);
       try {
-        let allStocksData: Stock[] = [];
-        let page = 1;
-        let hasMore = true;
-        const pageSize = 100;
-
-        while (hasMore) {
-          const response = await stockAPI.getStocks({
-            page,
-            page_size: pageSize,
-          });
-          const data = response.data;
-          const results = Array.isArray(data) ? data : data.results || [];
-          allStocksData = [...allStocksData, ...results];
-
-          if (Array.isArray(data)) {
-            hasMore = false;
-          } else {
-            const totalCount = data.count || 0;
-            const currentCount = allStocksData.length;
-            hasMore = currentCount < totalCount && results.length === pageSize;
-            if (hasMore) {
-              page++;
-            }
-          }
-        }
-
+        const response = await stockAPI.getAllStocks();
+        const allStocksData = Array.isArray(response.data) ? response.data : [];
         setAllStocks(allStocksData);
       } catch (error) {
         console.error("Failed to fetch all stocks:", error);
@@ -99,10 +120,22 @@ const EditBot: React.FC = () => {
       }
     };
 
-    if (stocks.length > 0) {
-      fetchAllStocks();
-    }
+    fetchAllStocks();
   }, [stocks]);
+
+  const fetchMlModels = async () => {
+    try {
+      const response = await mlModelAPI.getModels();
+      const modelsData = response.data;
+      setMlModels(
+        Array.isArray(modelsData)
+          ? modelsData
+          : (modelsData as any).results || []
+      );
+    } catch (error) {
+      console.error("Failed to fetch ML models:", error);
+    }
+  };
 
   const fetchBot = async () => {
     if (!id) return;
@@ -112,7 +145,7 @@ const EditBot: React.FC = () => {
       const botData = response.data;
       setBot(botData);
 
-      // Populate form with bot data
+      // Populate form with bot data including all new fields
       setBotForm({
         name: botData.name || "",
         budget_type: botData.budget_type || "cash",
@@ -129,6 +162,19 @@ const EditBot: React.FC = () => {
         enabled_patterns: botData.enabled_patterns || {},
         buy_rules: botData.buy_rules || {},
         sell_rules: botData.sell_rules || {},
+        enabled_ml_models: botData.enabled_ml_models || [],
+        ml_model_weights: botData.ml_model_weights || {},
+        enable_social_analysis: botData.enable_social_analysis || false,
+        enable_news_analysis: botData.enable_news_analysis || false,
+        signal_aggregation_method:
+          botData.signal_aggregation_method || "weighted_average",
+        signal_weights: botData.signal_weights || {},
+        signal_thresholds: botData.signal_thresholds || {},
+        risk_score_threshold: botData.risk_score_threshold?.toString() || "80",
+        risk_adjustment_factor:
+          botData.risk_adjustment_factor?.toString() || "1.0",
+        risk_based_position_scaling:
+          botData.risk_based_position_scaling ?? false,
       });
       // Initialize JSON fields with formatted strings
       setJsonFields({
@@ -229,10 +275,20 @@ const EditBot: React.FC = () => {
         budget_type: botForm.budget_type,
         assigned_stocks: botForm.assigned_stocks,
         risk_per_trade: parseFloat(botForm.risk_per_trade),
-        enabled_indicators: botForm.enabled_indicators,
-        enabled_patterns: botForm.enabled_patterns,
-        buy_rules: botForm.buy_rules,
-        sell_rules: botForm.sell_rules,
+        enabled_indicators: botForm.enabled_indicators || {},
+        enabled_patterns: botForm.enabled_patterns || {},
+        buy_rules: botForm.buy_rules || {},
+        sell_rules: botForm.sell_rules || {},
+        enabled_ml_models: botForm.enabled_ml_models || [],
+        ml_model_weights: botForm.ml_model_weights || {},
+        enable_social_analysis: botForm.enable_social_analysis || false,
+        enable_news_analysis: botForm.enable_news_analysis || false,
+        signal_aggregation_method:
+          botForm.signal_aggregation_method || "weighted_average",
+        signal_weights: botForm.signal_weights || {},
+        signal_thresholds: botForm.signal_thresholds || {},
+        risk_based_position_scaling:
+          botForm.risk_based_position_scaling || false,
       };
 
       if (botForm.budget_type === "cash") {
@@ -260,17 +316,58 @@ const EditBot: React.FC = () => {
           botForm.take_profit_percent
         );
       }
+      if (botForm.risk_score_threshold) {
+        updateData.risk_score_threshold = parseFloat(
+          botForm.risk_score_threshold
+        );
+      }
+      if (botForm.risk_adjustment_factor) {
+        updateData.risk_adjustment_factor = parseFloat(
+          botForm.risk_adjustment_factor
+        );
+      }
 
       await botAPI.updateBot(id, updateData);
       toast.success("Bot updated successfully");
       navigate(`/trading-bots/${id}`);
     } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        error.response?.data?.detail ||
-        "Failed to update bot";
-      toast.error(errorMessage);
+      const errorData = error.response?.data;
+      if (errorData) {
+        if (
+          errorData.assigned_stocks &&
+          Array.isArray(errorData.assigned_stocks)
+        ) {
+          toast.error(errorData.assigned_stocks[0]);
+          return;
+        }
+        if (errorData.budget_cash && Array.isArray(errorData.budget_cash)) {
+          toast.error(errorData.budget_cash[0]);
+          return;
+        }
+        if (
+          errorData.budget_portfolio &&
+          Array.isArray(errorData.budget_portfolio)
+        ) {
+          toast.error(errorData.budget_portfolio[0]);
+          return;
+        }
+        if (errorData.detail) {
+          toast.error(errorData.detail);
+          return;
+        }
+        if (errorData.message) {
+          toast.error(errorData.message);
+          return;
+        }
+        const firstErrorKey = Object.keys(errorData)[0];
+        if (firstErrorKey && Array.isArray(errorData[firstErrorKey])) {
+          toast.error(errorData[firstErrorKey][0]);
+          return;
+        }
+      }
+      toast.error(
+        "Failed to update bot. Please check your input and try again."
+      );
     } finally {
       setIsSaving(false);
     }
@@ -278,7 +375,7 @@ const EditBot: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
@@ -286,7 +383,7 @@ const EditBot: React.FC = () => {
 
   if (!bot) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
         <div className="text-center">
           <p className="text-gray-400 mb-4">Bot not found</p>
           <button
@@ -301,8 +398,8 @@ const EditBot: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <button
@@ -314,7 +411,7 @@ const EditBot: React.FC = () => {
           </button>
 
           <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">
               Edit Bot: {bot.name}
             </h1>
           </div>
@@ -324,474 +421,736 @@ const EditBot: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-gray-800 rounded-lg border border-gray-700 p-6"
+          className="bg-gray-800 rounded-lg border border-gray-700 p-4 sm:p-6"
         >
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {/* Basic Info */}
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                Bot Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={botForm.name}
-                onChange={(e) =>
-                  setBotForm({ ...botForm, name: e.target.value })
-                }
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                placeholder="My Trading Bot"
-              />
-            </div>
-
-            {/* Budget Type */}
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                Budget Type *
-              </label>
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Basic Information Section */}
+            <SectionCard
+              title="Basic Information"
+              icon={Bot}
+              defaultOpen={true}
+              isComplete={!!botForm.name && botForm.assigned_stocks.length > 0}
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Bot Name *
+                    <InfoTooltip tooltip={TOOLTIPS.botName} />
+                  </label>
                   <input
-                    type="radio"
-                    value="cash"
-                    checked={botForm.budget_type === "cash"}
+                    type="text"
+                    required
+                    value={botForm.name}
                     onChange={(e) =>
-                      setBotForm({
-                        ...botForm,
-                        budget_type: e.target.value as "cash" | "portfolio",
-                      })
+                      setBotForm({ ...botForm, name: e.target.value })
                     }
-                    className="w-4 h-4 text-blue-600"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    placeholder="My Trading Bot"
                   />
-                  <span className="text-white">Cash Budget</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    value="portfolio"
-                    checked={botForm.budget_type === "portfolio"}
-                    onChange={(e) =>
-                      setBotForm({
-                        ...botForm,
-                        budget_type: e.target.value as "cash" | "portfolio",
-                      })
-                    }
-                    className="w-4 h-4 text-blue-600"
-                  />
-                  <span className="text-white">Portfolio Budget</span>
-                </label>
-              </div>
-            </div>
+                </div>
 
-            {/* Budget Amount or Portfolio Selection */}
-            {botForm.budget_type === "cash" ? (
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Cash Budget ($) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  value={botForm.budget_cash}
-                  onChange={(e) =>
-                    setBotForm({ ...botForm, budget_cash: e.target.value })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="10000.00"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Select Portfolio Positions *
-                </label>
-                {availablePortfolio.length === 0 ? (
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 sm:p-4">
-                    <p className="text-yellow-400 text-xs sm:text-sm text-center">
-                      {portfolio.length === 0
-                        ? "No portfolio positions available"
-                        : `All ${portfolio.length} portfolio position(s) are already assigned to other bots`}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto border border-gray-600 rounded-lg p-2 space-y-2">
-                    {availablePortfolio.map((pos) => (
-                      <label
-                        key={pos.id}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={botForm.budget_portfolio.includes(pos.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setBotForm({
-                                ...botForm,
-                                budget_portfolio: [
-                                  ...botForm.budget_portfolio,
-                                  pos.id,
-                                ],
-                              });
-                            } else {
-                              setBotForm({
-                                ...botForm,
-                                budget_portfolio:
-                                  botForm.budget_portfolio.filter(
-                                    (id: string) => id !== pos.id
-                                  ),
-                              });
-                            }
-                          }}
-                          className="w-4 h-4 text-blue-600"
-                        />
-                        <span className="text-white text-xs sm:text-sm">
-                          {pos.stock_symbol} - {pos.quantity} shares
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Assigned Stocks */}
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                Assigned Stocks * (Select stocks bot can trade)
-              </label>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search stocks..."
-                className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500 mb-2"
-              />
-              <div className="max-h-60 overflow-y-auto border border-gray-600 rounded-lg p-2 space-y-2">
-                {isLoadingStocks ? (
-                  <p className="text-gray-400 text-sm text-center py-4">
-                    Loading stocks...
-                  </p>
-                ) : filteredStocks.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center py-4">
-                    {searchQuery && searchQuery.trim().length > 0
-                      ? "No stocks found matching your search"
-                      : "No stocks available"}
-                  </p>
-                ) : (
-                  filteredStocks.map((stock) => (
-                    <label
-                      key={stock.id}
-                      className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
-                    >
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Budget Type *
+                    <InfoTooltip tooltip={TOOLTIPS.budgetType} />
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
-                        type="checkbox"
-                        checked={botForm.assigned_stocks.includes(stock.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setBotForm({
-                              ...botForm,
-                              assigned_stocks: [
-                                ...botForm.assigned_stocks,
-                                stock.id,
-                              ],
-                            });
-                          } else {
-                            setBotForm({
-                              ...botForm,
-                              assigned_stocks: botForm.assigned_stocks.filter(
-                                (id: string) => id !== stock.id
-                              ),
-                            });
-                          }
-                        }}
+                        type="radio"
+                        value="cash"
+                        checked={botForm.budget_type === "cash"}
+                        onChange={(e) =>
+                          setBotForm({
+                            ...botForm,
+                            budget_type: e.target.value as "cash" | "portfolio",
+                          })
+                        }
                         className="w-4 h-4 text-blue-600"
                       />
-                      <span className="text-white text-sm">
-                        {stock.symbol} - {stock.name}
-                      </span>
+                      <Wallet className="w-4 h-4 text-gray-400" />
+                      <span className="text-white">Cash Budget</span>
                     </label>
-                  ))
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="portfolio"
+                        checked={botForm.budget_type === "portfolio"}
+                        onChange={(e) =>
+                          setBotForm({
+                            ...botForm,
+                            budget_type: e.target.value as "cash" | "portfolio",
+                          })
+                        }
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <TrendingUp className="w-4 h-4 text-gray-400" />
+                      <span className="text-white">Portfolio Budget</span>
+                    </label>
+                  </div>
+                </div>
+
+                {botForm.budget_type === "cash" ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Cash Budget ($) *
+                      <InfoTooltip tooltip={TOOLTIPS.budgetCash} />
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={botForm.budget_cash}
+                      onChange={(e) =>
+                        setBotForm({ ...botForm, budget_cash: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                      placeholder="10000.00"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Select Portfolio Positions *
+                      <InfoTooltip tooltip={TOOLTIPS.budgetPortfolio} />
+                    </label>
+                    {availablePortfolio.length === 0 ? (
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                        <p className="text-yellow-400 text-sm text-center">
+                          {portfolio.length === 0
+                            ? "No portfolio positions available"
+                            : `All ${portfolio.length} portfolio position(s) are already assigned to other bots`}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="max-h-40 overflow-y-auto border border-gray-600 rounded-lg p-2 space-y-2">
+                        {availablePortfolio.map((pos) => (
+                          <label
+                            key={pos.id}
+                            className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={botForm.budget_portfolio.includes(
+                                pos.id
+                              )}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setBotForm({
+                                    ...botForm,
+                                    budget_portfolio: [
+                                      ...botForm.budget_portfolio,
+                                      pos.id,
+                                    ],
+                                  });
+                                } else {
+                                  setBotForm({
+                                    ...botForm,
+                                    budget_portfolio:
+                                      botForm.budget_portfolio.filter(
+                                        (id: string) => id !== pos.id
+                                      ),
+                                  });
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600"
+                            />
+                            <span className="text-white text-sm">
+                              {pos.stock_symbol} - {pos.quantity} shares
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {botForm.assigned_stocks.length} stock(s) selected
-              </p>
-            </div>
 
-            {/* Risk Settings */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Risk per Trade (%) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="100"
-                  required
-                  value={botForm.risk_per_trade}
-                  onChange={(e) =>
-                    setBotForm({ ...botForm, risk_per_trade: e.target.value })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="2.00"
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Assigned Stocks * (Select stocks bot can trade)
+                    <InfoTooltip tooltip={TOOLTIPS.assignedStocks} />
+                  </label>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search stocks..."
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500 mb-2"
+                  />
+                  <div className="max-h-60 overflow-y-auto border border-gray-600 rounded-lg p-2 space-y-2">
+                    {isLoadingStocks ? (
+                      <p className="text-gray-400 text-sm text-center py-4">
+                        Loading stocks...
+                      </p>
+                    ) : filteredStocks.length === 0 ? (
+                      <p className="text-gray-400 text-sm text-center py-4">
+                        {searchQuery && searchQuery.trim().length > 0
+                          ? "No stocks found matching your search"
+                          : "No stocks available"}
+                      </p>
+                    ) : (
+                      filteredStocks.map((stock) => (
+                        <label
+                          key={stock.id}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={botForm.assigned_stocks.includes(stock.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setBotForm({
+                                  ...botForm,
+                                  assigned_stocks: [
+                                    ...botForm.assigned_stocks,
+                                    stock.id,
+                                  ],
+                                });
+                              } else {
+                                setBotForm({
+                                  ...botForm,
+                                  assigned_stocks:
+                                    botForm.assigned_stocks.filter(
+                                      (id: string) => id !== stock.id
+                                    ),
+                                });
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600"
+                          />
+                          <span className="text-white text-sm">
+                            {stock.symbol} - {stock.name}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {botForm.assigned_stocks.length} stock(s) selected
+                  </p>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Max Position Size
-                </label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={botForm.max_position_size}
-                  onChange={(e) =>
+            </SectionCard>
+
+            {/* Risk Management Section */}
+            <SectionCard
+              title="Risk Management"
+              icon={Shield}
+              defaultOpen={false}
+              isComplete={
+                !!botForm.risk_per_trade &&
+                (botForm.budget_type === "cash"
+                  ? !!botForm.budget_cash
+                  : botForm.budget_portfolio.length > 0)
+              }
+            >
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <ThresholdInput
+                    label="Risk per Trade (%)"
+                    icon={AlertTriangle}
+                    value={botForm.risk_per_trade}
+                    onChange={(value) =>
+                      setBotForm({ ...botForm, risk_per_trade: String(value) })
+                    }
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.01"
+                    required
+                    tooltip={TOOLTIPS.riskPerTrade}
+                  />
+                  <ThresholdInput
+                    label="Stop Loss (%)"
+                    icon={TrendingDown}
+                    value={botForm.stop_loss_percent || ""}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        stop_loss_percent: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.01"
+                    tooltip={TOOLTIPS.stopLoss}
+                  />
+                  <ThresholdInput
+                    label="Take Profit (%)"
+                    icon={TrendingUp}
+                    value={botForm.take_profit_percent || ""}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        take_profit_percent: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.01"
+                    tooltip={TOOLTIPS.takeProfit}
+                  />
+                  <ThresholdInput
+                    label="Max Position Size"
+                    icon={Maximize}
+                    value={botForm.max_position_size || ""}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        max_position_size: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    tooltip={TOOLTIPS.maxPositionSize}
+                  />
+                  <ThresholdInput
+                    label="Max Daily Trades"
+                    icon={Activity}
+                    value={botForm.max_daily_trades || ""}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        max_daily_trades: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0"
+                    tooltip={TOOLTIPS.maxDailyTrades}
+                  />
+                  <ThresholdInput
+                    label="Max Daily Loss ($)"
+                    icon={DollarSign}
+                    value={botForm.max_daily_loss || ""}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        max_daily_loss: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    tooltip={TOOLTIPS.maxDailyLoss}
+                  />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* ML Models Section */}
+            <SectionCard
+              title="ML Models"
+              icon={Brain}
+              defaultOpen={false}
+              isComplete={botForm.enabled_ml_models.length > 0}
+            >
+              <MLModelSelector
+                mlModels={mlModels}
+                enabledModels={botForm.enabled_ml_models}
+                modelWeights={botForm.ml_model_weights}
+                onModelsChange={(models) =>
+                  setBotForm({ ...botForm, enabled_ml_models: models })
+                }
+                onWeightsChange={(weights) =>
+                  setBotForm({ ...botForm, ml_model_weights: weights })
+                }
+              />
+            </SectionCard>
+
+            {/* Social Media Analysis Section */}
+            <SectionCard
+              title="Social Media Analysis"
+              icon={MessageSquare}
+              defaultOpen={false}
+              isComplete={botForm.enable_social_analysis}
+            >
+              <SignalSourceToggle
+                label="Enable Social Media Analysis"
+                icon={MessageSquare}
+                enabled={botForm.enable_social_analysis}
+                onToggle={(enabled) =>
+                  setBotForm({ ...botForm, enable_social_analysis: enabled })
+                }
+                tooltip={TOOLTIPS.socialAnalysis}
+              >
+                <div className="mt-3 space-y-3">
+                  <SignalWeightSlider
+                    label="Social Media Weight"
+                    icon={BarChart}
+                    value={
+                      (botForm.signal_weights?.social ||
+                        SIGNAL_SOURCE_WEIGHTS.social.default) * 100
+                    }
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_weights: {
+                          ...botForm.signal_weights,
+                          social: value / 100,
+                        },
+                      })
+                    }
+                    tooltip={{
+                      title: "Social Media Signal Weight",
+                      description:
+                        "Weight of social media signals in aggregation",
+                    }}
+                  />
+                </div>
+              </SignalSourceToggle>
+            </SectionCard>
+
+            {/* News Analysis Section */}
+            <SectionCard
+              title="News Analysis"
+              icon={Newspaper}
+              defaultOpen={false}
+              isComplete={botForm.enable_news_analysis}
+            >
+              <SignalSourceToggle
+                label="Enable News Analysis"
+                icon={Newspaper}
+                enabled={botForm.enable_news_analysis}
+                onToggle={(enabled) =>
+                  setBotForm({ ...botForm, enable_news_analysis: enabled })
+                }
+                tooltip={TOOLTIPS.newsAnalysis}
+              >
+                <div className="mt-3 space-y-3">
+                  <SignalWeightSlider
+                    label="News Weight"
+                    icon={BarChart}
+                    value={
+                      (botForm.signal_weights?.news ||
+                        SIGNAL_SOURCE_WEIGHTS.news.default) * 100
+                    }
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_weights: {
+                          ...botForm.signal_weights,
+                          news: value / 100,
+                        },
+                      })
+                    }
+                    tooltip={{
+                      title: "News Signal Weight",
+                      description: "Weight of news signals in aggregation",
+                    }}
+                  />
+                </div>
+              </SignalSourceToggle>
+            </SectionCard>
+
+            {/* Technical Indicators Section */}
+            <SectionCard
+              title="Technical Indicators"
+              icon={LineChart}
+              defaultOpen={false}
+              isComplete={Object.keys(botForm.enabled_indicators).length > 0}
+            >
+              <IndicatorGrid
+                enabledIndicators={botForm.enabled_indicators}
+                onIndicatorsChange={(indicators) =>
+                  setBotForm({ ...botForm, enabled_indicators: indicators })
+                }
+              />
+            </SectionCard>
+
+            {/* Chart Patterns Section */}
+            <SectionCard
+              title="Chart Patterns"
+              icon={Layers}
+              defaultOpen={false}
+              isComplete={Object.keys(botForm.enabled_patterns).length > 0}
+            >
+              <PatternGrid
+                enabledPatterns={botForm.enabled_patterns}
+                onPatternsChange={(patterns) =>
+                  setBotForm({ ...botForm, enabled_patterns: patterns })
+                }
+              />
+            </SectionCard>
+
+            {/* Signal Aggregation Section */}
+            <SectionCard
+              title="Signal Aggregation"
+              icon={GitMerge}
+              defaultOpen={false}
+              isComplete={!!botForm.signal_aggregation_method}
+            >
+              <div className="space-y-6">
+                <AggregationMethodSelector
+                  value={botForm.signal_aggregation_method}
+                  onChange={(value) =>
                     setBotForm({
                       ...botForm,
-                      max_position_size: e.target.value,
+                      signal_aggregation_method: value,
                     })
                   }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="Optional"
                 />
-              </div>
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Max Daily Trades
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={botForm.max_daily_trades}
-                  onChange={(e) =>
-                    setBotForm({ ...botForm, max_daily_trades: e.target.value })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="Optional"
-                />
-              </div>
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Max Daily Loss ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={botForm.max_daily_loss}
-                  onChange={(e) =>
-                    setBotForm({ ...botForm, max_daily_loss: e.target.value })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="Optional"
-                />
-              </div>
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Stop Loss (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="100"
-                  value={botForm.stop_loss_percent}
-                  onChange={(e) =>
-                    setBotForm({
-                      ...botForm,
-                      stop_loss_percent: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="Optional"
-                />
-              </div>
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-2">
-                  Take Profit (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="100"
-                  value={botForm.take_profit_percent}
-                  onChange={(e) =>
-                    setBotForm({
-                      ...botForm,
-                      take_profit_percent: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 sm:px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:border-blue-500"
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
 
-            {/* Rules Configuration */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Buy Rules (JSON - Advanced)
-              </label>
-              <textarea
-                value={jsonFields.buy_rules}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setJsonFields({ ...jsonFields, buy_rules: value });
-                  try {
-                    setBotForm({
-                      ...botForm,
-                      buy_rules: JSON.parse(value),
-                    });
-                  } catch {
-                    // Invalid JSON while typing, keep raw string
-                  }
-                }}
-                onBlur={(e) => {
-                  // Validate on blur and update if valid
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    setBotForm({
-                      ...botForm,
-                      buy_rules: parsed,
-                    });
-                    setJsonFields({
-                      ...jsonFields,
-                      buy_rules: JSON.stringify(parsed, null, 2),
-                    });
-                  } catch {
-                    // Keep invalid JSON for user to fix
-                  }
-                }}
-                rows={8}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
-                placeholder='{"rsi": {"enabled": true, "threshold": 30}}'
-              />
-            </div>
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-gray-300">
+                    Signal Type Weights
+                  </h4>
+                  <SignalWeightSlider
+                    label={SIGNAL_SOURCE_WEIGHTS.ml.name}
+                    icon={Brain}
+                    value={
+                      (botForm.signal_weights?.ml ||
+                        SIGNAL_SOURCE_WEIGHTS.ml.default) * 100
+                    }
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_weights: {
+                          ...botForm.signal_weights,
+                          ml: value / 100,
+                        },
+                      })
+                    }
+                  />
+                  <SignalWeightSlider
+                    label={SIGNAL_SOURCE_WEIGHTS.indicators.name}
+                    icon={LineChart}
+                    value={
+                      (botForm.signal_weights?.indicators ||
+                        SIGNAL_SOURCE_WEIGHTS.indicators.default) * 100
+                    }
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_weights: {
+                          ...botForm.signal_weights,
+                          indicators: value / 100,
+                        },
+                      })
+                    }
+                  />
+                  <SignalWeightSlider
+                    label={SIGNAL_SOURCE_WEIGHTS.patterns.name}
+                    icon={Layers}
+                    value={
+                      (botForm.signal_weights?.patterns ||
+                        SIGNAL_SOURCE_WEIGHTS.patterns.default) * 100
+                    }
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_weights: {
+                          ...botForm.signal_weights,
+                          patterns: value / 100,
+                        },
+                      })
+                    }
+                  />
+                  {botForm.enable_social_analysis && (
+                    <SignalWeightSlider
+                      label={SIGNAL_SOURCE_WEIGHTS.social.name}
+                      icon={MessageSquare}
+                      value={
+                        (botForm.signal_weights?.social ||
+                          SIGNAL_SOURCE_WEIGHTS.social.default) * 100
+                      }
+                      onChange={(value) =>
+                        setBotForm({
+                          ...botForm,
+                          signal_weights: {
+                            ...botForm.signal_weights,
+                            social: value / 100,
+                          },
+                        })
+                      }
+                    />
+                  )}
+                  {botForm.enable_news_analysis && (
+                    <SignalWeightSlider
+                      label={SIGNAL_SOURCE_WEIGHTS.news.name}
+                      icon={Newspaper}
+                      value={
+                        (botForm.signal_weights?.news ||
+                          SIGNAL_SOURCE_WEIGHTS.news.default) * 100
+                      }
+                      onChange={(value) =>
+                        setBotForm({
+                          ...botForm,
+                          signal_weights: {
+                            ...botForm.signal_weights,
+                            news: value / 100,
+                          },
+                        })
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+            </SectionCard>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Sell Rules (JSON - Advanced)
-              </label>
-              <textarea
-                value={jsonFields.sell_rules}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setJsonFields({ ...jsonFields, sell_rules: value });
-                  try {
-                    setBotForm({
-                      ...botForm,
-                      sell_rules: JSON.parse(value),
-                    });
-                  } catch {
-                    // Invalid JSON while typing, keep raw string
-                  }
-                }}
-                onBlur={(e) => {
-                  // Validate on blur and update if valid
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    setBotForm({
-                      ...botForm,
-                      sell_rules: parsed,
-                    });
-                    setJsonFields({
-                      ...jsonFields,
-                      sell_rules: JSON.stringify(parsed, null, 2),
-                    });
-                  } catch {
-                    // Keep invalid JSON for user to fix
-                  }
-                }}
-                rows={8}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
-                placeholder='{"rsi": {"enabled": true, "threshold": 70}}'
-              />
-            </div>
+            {/* Enhanced Risk Management Section */}
+            <SectionCard
+              title="Enhanced Risk Management"
+              icon={Gauge}
+              defaultOpen={false}
+              isComplete={!!botForm.risk_score_threshold}
+            >
+              <div className="space-y-4">
+                <RiskScorePreview
+                  riskScoreThreshold={botForm.risk_score_threshold}
+                  riskAdjustmentFactor={botForm.risk_adjustment_factor}
+                  riskBasedPositionScaling={botForm.risk_based_position_scaling}
+                />
+                <div className="space-y-4 border-t border-gray-600 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-300">
+                    Risk Integration
+                  </h4>
+                  <ThresholdInput
+                    label="Risk Score Threshold"
+                    icon={Shield}
+                    value={botForm.risk_score_threshold}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        risk_score_threshold: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    tooltip={TOOLTIPS.riskScoreThreshold}
+                  />
+                  <ThresholdInput
+                    label="Risk Adjustment Factor"
+                    icon={Gauge}
+                    value={botForm.risk_adjustment_factor}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        risk_adjustment_factor: String(value),
+                      })
+                    }
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    tooltip={TOOLTIPS.riskAdjustmentFactor}
+                  />
+                  <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={botForm.risk_based_position_scaling}
+                        onChange={(e) =>
+                          setBotForm({
+                            ...botForm,
+                            risk_based_position_scaling: e.target.checked,
+                          })
+                        }
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      Risk-Based Position Scaling
+                    </label>
+                    <InfoTooltip tooltip={TOOLTIPS.riskBasedPositionScaling} />
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Enabled Indicators (JSON - Advanced)
-              </label>
-              <textarea
-                value={jsonFields.enabled_indicators}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setJsonFields({ ...jsonFields, enabled_indicators: value });
-                  try {
-                    setBotForm({
-                      ...botForm,
-                      enabled_indicators: JSON.parse(value),
-                    });
-                  } catch {
-                    // Invalid JSON while typing, keep raw string
-                  }
-                }}
-                onBlur={(e) => {
-                  // Validate on blur and update if valid
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    setBotForm({
-                      ...botForm,
-                      enabled_indicators: parsed,
-                    });
-                    setJsonFields({
-                      ...jsonFields,
-                      enabled_indicators: JSON.stringify(parsed, null, 2),
-                    });
-                  } catch {
-                    // Keep invalid JSON for user to fix
-                  }
-                }}
-                rows={6}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
-                placeholder='{"rsi": true, "macd": true}'
-              />
-            </div>
+            {/* Advanced Rules Section */}
+            <SectionCard
+              title="Advanced Rules (JSON)"
+              icon={Activity}
+              defaultOpen={false}
+              isComplete={
+                Object.keys(botForm.buy_rules).length > 0 ||
+                Object.keys(botForm.sell_rules).length > 0
+              }
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Buy Rules (JSON - Advanced)
+                  </label>
+                  <textarea
+                    value={jsonFields.buy_rules}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setJsonFields({ ...jsonFields, buy_rules: value });
+                      try {
+                        setBotForm({
+                          ...botForm,
+                          buy_rules: JSON.parse(value),
+                        });
+                      } catch {
+                        // Invalid JSON while typing, keep raw string
+                      }
+                    }}
+                    onBlur={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        setBotForm({
+                          ...botForm,
+                          buy_rules: parsed,
+                        });
+                        setJsonFields({
+                          ...jsonFields,
+                          buy_rules: JSON.stringify(parsed, null, 2),
+                        });
+                      } catch {
+                        // Keep invalid JSON for user to fix
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono text-sm"
+                    rows={4}
+                    placeholder='{"operator": "AND", "conditions": [...]}'
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Enabled Patterns (JSON - Advanced)
-              </label>
-              <textarea
-                value={jsonFields.enabled_patterns}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setJsonFields({ ...jsonFields, enabled_patterns: value });
-                  try {
-                    setBotForm({
-                      ...botForm,
-                      enabled_patterns: JSON.parse(value),
-                    });
-                  } catch {
-                    // Invalid JSON while typing, keep raw string
-                  }
-                }}
-                onBlur={(e) => {
-                  // Validate on blur and update if valid
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    setBotForm({
-                      ...botForm,
-                      enabled_patterns: parsed,
-                    });
-                    setJsonFields({
-                      ...jsonFields,
-                      enabled_patterns: JSON.stringify(parsed, null, 2),
-                    });
-                  } catch {
-                    // Keep invalid JSON for user to fix
-                  }
-                }}
-                rows={6}
-                className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
-                placeholder='{"hammer": true, "doji": true}'
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Sell Rules (JSON - Advanced)
+                  </label>
+                  <textarea
+                    value={jsonFields.sell_rules}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setJsonFields({ ...jsonFields, sell_rules: value });
+                      try {
+                        setBotForm({
+                          ...botForm,
+                          sell_rules: JSON.parse(value),
+                        });
+                      } catch {
+                        // Invalid JSON while typing, keep raw string
+                      }
+                    }}
+                    onBlur={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        setBotForm({
+                          ...botForm,
+                          sell_rules: parsed,
+                        });
+                        setJsonFields({
+                          ...jsonFields,
+                          sell_rules: JSON.stringify(parsed, null, 2),
+                        });
+                      } catch {
+                        // Keep invalid JSON for user to fix
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500 font-mono text-sm"
+                    rows={4}
+                    placeholder='{"operator": "OR", "conditions": [...]}'
+                  />
+                </div>
+              </div>
+            </SectionCard>
 
             {/* Submit Button */}
             <div className="flex gap-4 pt-4 border-t border-gray-700">

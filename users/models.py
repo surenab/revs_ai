@@ -162,7 +162,7 @@ class UserProfile(models.Model):
         _("cash balance"),
         max_digits=15,
         decimal_places=2,
-        default=Decimal("10000.00"),  # Default starting cash: $10,000
+        default=Decimal(0),  # Default starting cash: $0
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text=_("Available cash balance for trading"),
     )

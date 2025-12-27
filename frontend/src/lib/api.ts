@@ -660,9 +660,20 @@ export interface TradingBotConfig {
   stop_loss_percent?: number;
   take_profit_percent?: number;
   enabled_indicators: Record<string, any>;
+  indicator_thresholds?: Record<string, Record<string, number>>;
   enabled_patterns: Record<string, any>;
   buy_rules: Record<string, any>;
   sell_rules: Record<string, any>;
+  enabled_ml_models?: string[];
+  ml_model_weights?: Record<string, number>;
+  enable_social_analysis?: boolean;
+  enable_news_analysis?: boolean;
+  signal_aggregation_method?: string;
+  signal_weights?: Record<string, number>;
+  signal_thresholds?: Record<string, any>;
+  risk_score_threshold?: number;
+  risk_adjustment_factor?: number;
+  risk_based_position_scaling?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -678,7 +689,28 @@ export interface TradingBotExecution {
   indicators_data: Record<string, any>;
   patterns_detected: Record<string, any>;
   risk_score?: number;
-  executed_order?: string;
+  executed_order?: Order;
+  bot_config_settings?: {
+    enable_social_analysis?: boolean;
+    enable_news_analysis?: boolean;
+    enabled_indicators?: string[];
+    enabled_patterns?: string[];
+    indicator_thresholds?: Record<string, Record<string, number>>;
+  };
+  signal_history?: {
+    id: string;
+    ml_signals?: any;
+    social_signals?: any;
+    news_signals?: any;
+    indicator_signals?: any;
+    pattern_signals?: any;
+    aggregated_signal?: any;
+    final_decision?: string;
+    decision_confidence?: number;
+    risk_score?: number;
+    timestamp?: string;
+    price_data_snapshot?: any;
+  };
   timestamp: string;
 }
 
@@ -709,6 +741,16 @@ export interface BotCreateRequest {
   enabled_patterns?: Record<string, any>;
   buy_rules?: Record<string, any>;
   sell_rules?: Record<string, any>;
+  enabled_ml_models?: string[];
+  ml_model_weights?: Record<string, number>;
+  enable_social_analysis?: boolean;
+  enable_news_analysis?: boolean;
+  signal_aggregation_method?: string;
+  signal_weights?: Record<string, number>;
+  signal_thresholds?: Record<string, any>;
+  risk_score_threshold?: number;
+  risk_adjustment_factor?: number;
+  risk_based_position_scaling?: boolean;
 }
 
 // Notification Types
@@ -727,19 +769,19 @@ export interface Notification {
 
 export const notificationAPI = {
   getNotifications: async (params?: { page?: number; page_size?: number; is_read?: boolean }): Promise<AxiosResponse<{ count: number; results: Notification[] } | Notification[]>> => {
-    return api.get('/users/notifications/', { params });
+    return api.get('/notifications/', { params });
   },
   getUnreadCount: async (): Promise<AxiosResponse<{ count: number }>> => {
-    return api.get('/users/notifications/unread_count/');
+    return api.get('/notifications/unread_count/');
   },
   markAsRead: async (id: string): Promise<AxiosResponse<{ message: string }>> => {
-    return api.post(`/users/notifications/${id}/mark_read/`);
+    return api.post(`/notifications/${id}/mark_read/`);
   },
   markAllAsRead: async (): Promise<AxiosResponse<{ message: string; updated: number }>> => {
-    return api.post('/users/notifications/mark_all_read/');
+    return api.post('/notifications/mark_all_read/');
   },
   deleteNotification: async (id: string): Promise<AxiosResponse<void>> => {
-    return api.delete(`/users/notifications/${id}/`);
+    return api.delete(`/notifications/${id}/`);
   },
 };
 
@@ -778,9 +820,65 @@ export const botAPI = {
     bot_name: string;
     timestamp: string;
     stocks_analyzed: string[];
-    buy_signals: Array<{ stock: string; reason: string; risk_score?: number }>;
-    sell_signals: Array<{ stock: string; reason: string; risk_score?: number }>;
-    skipped: Array<{ stock: string; reason: string }>;
+    buy_signals: Array<{
+      stock: string;
+      stock_name?: string;
+      action: string;
+      reason: string;
+      risk_score?: number;
+      confidence?: number;
+      current_price?: number;
+      indicators?: Record<string, any>;
+      patterns?: Array<any>;
+      ml_signals?: Array<any>;
+      social_signals?: any;
+      news_signals?: any;
+      aggregated_signal?: any;
+      position_size?: number;
+      decision_details?: any;
+      executed?: boolean;
+      order_id?: string;
+    }>;
+    sell_signals: Array<{
+      stock: string;
+      stock_name?: string;
+      action: string;
+      reason: string;
+      risk_score?: number;
+      confidence?: number;
+      current_price?: number;
+      indicators?: Record<string, any>;
+      patterns?: Array<any>;
+      ml_signals?: Array<any>;
+      social_signals?: any;
+      news_signals?: any;
+      aggregated_signal?: any;
+      position_size?: number;
+      decision_details?: any;
+      executed?: boolean;
+      order_id?: string;
+    }>;
+    skipped: Array<{
+      stock: string;
+      stock_name?: string;
+      action?: string;
+      reason: string;
+      risk_score?: number;
+      confidence?: number;
+      current_price?: number;
+      indicators?: Record<string, any>;
+      patterns?: Array<any>;
+      ml_signals?: Array<any>;
+      social_signals?: any;
+      news_signals?: any;
+      aggregated_signal?: any;
+      position_size?: number;
+      decision_details?: any;
+    }>;
+    trades_executed?: number;
+    trade_errors?: string[];
+    executed_orders?: Order[];
+    configurations_used?: Record<string, any>;
   }>> =>
     api.post(`/stocks/bots/${id}/execute/`),
 
@@ -788,9 +886,97 @@ export const botAPI = {
   getBotExecutions: (botId: string): Promise<AxiosResponse<TradingBotExecution[]>> =>
     api.get(`/stocks/bots/${botId}/executions/`),
 
+  // Get execution detail
+  getExecutionDetail: (executionId: string): Promise<AxiosResponse<TradingBotExecution>> =>
+    api.get(`/stocks/executions/${executionId}/`),
+
+  // Get bot orders
+  getBotOrders: (botId: string): Promise<AxiosResponse<{ count: number; results: Order[] } | Order[]>> =>
+    api.get(`/stocks/bots/${botId}/orders/`),
+
   // Get bot performance
   getBotPerformance: (id: string): Promise<AxiosResponse<BotPerformance>> =>
     api.get(`/stocks/bots/${id}/performance/`),
+
+  // Get bot templates
+  getBotTemplates: (): Promise<AxiosResponse<Record<string, any>>> =>
+    api.get('/stocks/bot-templates/'),
+};
+
+// ML Model Types
+export interface MLModel {
+  id: string;
+  name: string;
+  model_type: 'classification' | 'regression';
+  framework: 'sklearn' | 'pytorch' | 'tensorflow' | 'custom';
+  version: string;
+  description?: string;
+  parameters: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, any>;
+}
+
+export const mlModelAPI = {
+  // Get all ML models
+  getModels: (params?: { is_active?: boolean; framework?: string; model_type?: string }): Promise<AxiosResponse<MLModel[]>> =>
+    api.get('/stocks/ml-models/', { params }),
+
+  // Get ML model by ID
+  getModel: (id: string): Promise<AxiosResponse<MLModel>> =>
+    api.get(`/stocks/ml-models/${id}/`),
+
+  // Create ML model (admin only)
+  createModel: (data: Partial<MLModel>): Promise<AxiosResponse<MLModel>> =>
+    api.post('/stocks/ml-models/', data),
+
+  // Update ML model (admin only)
+  updateModel: (id: string, data: Partial<MLModel>): Promise<AxiosResponse<MLModel>> =>
+    api.put(`/stocks/ml-models/${id}/`, data),
+
+  // Delete ML model (admin only)
+  deleteModel: (id: string): Promise<AxiosResponse<void>> =>
+    api.delete(`/stocks/ml-models/${id}/`),
+
+  // Make prediction
+  predict: (modelId: string, data: { stock_symbol: string; price_data?: any[]; indicators?: Record<string, any> }): Promise<AxiosResponse<any>> =>
+    api.post(`/stocks/ml-models/${modelId}/predict/`, data),
+};
+
+// Signal History Types
+export interface BotSignalHistory {
+  id: string;
+  bot_config: string;
+  bot_config_name: string;
+  stock: string;
+  stock_symbol: string;
+  timestamp: string;
+  price_data_snapshot: Record<string, any>;
+  ml_signals: Record<string, any>;
+  social_signals: Record<string, any>;
+  news_signals: Record<string, any>;
+  indicator_signals: Record<string, any>;
+  pattern_signals: Record<string, any>;
+  aggregated_signal: Record<string, any>;
+  final_decision: 'buy' | 'sell' | 'hold';
+  decision_confidence?: number;
+  risk_score?: number;
+  execution?: string;
+}
+
+export const signalHistoryAPI = {
+  // Get signal history
+  getSignalHistory: (params?: { bot_id?: string; stock_symbol?: string; decision?: string; start_date?: string; end_date?: string }): Promise<AxiosResponse<BotSignalHistory[]>> =>
+    api.get('/stocks/signal-history/', { params }),
+
+  // Get signal history detail
+  getSignalHistoryDetail: (id: string): Promise<AxiosResponse<BotSignalHistory>> =>
+    api.get(`/stocks/signal-history/${id}/`),
+
+  // Get signal analytics
+  getSignalAnalytics: (botId: string): Promise<AxiosResponse<any[]>> =>
+    api.get(`/stocks/bots/${botId}/signal-analytics/`),
 };
 
 // Utility function to convert relative media URLs to absolute backend URLs
@@ -814,5 +1000,30 @@ export const getMediaUrl = (relativePath?: string | null): string | null => {
 
   return `${BACKEND_BASE_URL}${relativePath}`;
 };
+
+// Default Indicator Thresholds
+export interface DefaultIndicatorThresholds {
+  [indicatorType: string]: {
+    [thresholdKey: string]: number;
+  };
+}
+
+/**
+ * Fetch default indicator thresholds from the backend.
+ * These are configurable via Django admin and fall back to code defaults.
+ */
+export const getDefaultIndicatorThresholds =
+  async (): Promise<DefaultIndicatorThresholds> => {
+    try {
+      const response = await api.get<DefaultIndicatorThresholds>(
+        '/stocks/default-indicator-thresholds/'
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching default indicator thresholds:', error);
+      // Return empty object - frontend will use fallback
+      return {};
+    }
+  };
 
 export default api;

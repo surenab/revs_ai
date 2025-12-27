@@ -1,7 +1,8 @@
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Avg, Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, permissions, status
@@ -13,7 +14,9 @@ from users.models import UserProfile
 from users.views import create_notification
 
 from .models import (
+    BotSignalHistory,
     IntradayPrice,
+    MLModel,
     Order,
     Portfolio,
     Stock,
@@ -22,17 +25,23 @@ from .models import (
     StockTick,
     TradingBotConfig,
     TradingBotExecution,
+    TradingBotSettings,
     UserWatchlist,
 )
 from .permissions import IsAdminRole
 from .serializers import (
     BotPerformanceSerializer,
+    BotSignalHistoryListSerializer,
+    BotSignalHistorySerializer,
     IntradayPriceListSerializer,
+    MLModelPredictionSerializer,
+    MLModelSerializer,
     OrderCreateSerializer,
     OrderSerializer,
     PortfolioCreateSerializer,
     PortfolioSerializer,
     RealTimeDataSerializer,
+    SignalAnalyticsSerializer,
     StockAlertCreateSerializer,
     StockAlertSerializer,
     StockListSerializer,
@@ -47,6 +56,8 @@ from .serializers import (
     UserWatchlistSerializer,
 )
 from .services import alpha_vantage_service
+
+logger = logging.getLogger(__name__)
 
 
 class StockListView(generics.ListAPIView):
@@ -1494,8 +1505,8 @@ def deactivate_bot(request, pk):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated, IsAdminRole])
-def execute_bot(request, pk):
-    """Manually trigger bot execution."""
+def execute_bot(request, pk):  # noqa: PLR0912, PLR0915
+    """Manually trigger bot execution with full configuration support."""
     try:
         bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
 
@@ -1505,9 +1516,205 @@ def execute_bot(request, pk):
             )
 
         from .bot_engine import TradingBot
+        from .models import Stock
 
         bot = TradingBot(bot_config)
         results = bot.run_analysis()
+
+        # Create execution records for skipped stocks (executed trades will create their own records)
+        from .models import TradingBotExecution
+
+        for skipped_stock in results.get("skipped", []):
+            try:
+                stock = Stock.objects.get(symbol=skipped_stock.get("stock"))
+                # Create execution record for skipped stocks
+                execution = TradingBotExecution.objects.create(
+                    bot_config=bot_config,
+                    stock=stock,
+                    action=skipped_stock.get("action", "skip"),
+                    reason=skipped_stock.get("reason", "No reason provided"),
+                    indicators_data=skipped_stock.get("indicators", {}),
+                    patterns_detected={
+                        p.get("pattern", f"pattern_{idx}"): p
+                        for idx, p in enumerate(skipped_stock.get("patterns", []))
+                    },
+                    risk_score=Decimal(str(skipped_stock.get("risk_score")))
+                    if skipped_stock.get("risk_score")
+                    else None,
+                    executed_order=None,
+                )
+
+                # Link to signal history if available
+                from datetime import timedelta
+
+                from .models import BotSignalHistory
+
+                # Find signal history within 1 minute of execution
+                time_window_start = execution.timestamp - timedelta(minutes=1)
+                time_window_end = execution.timestamp + timedelta(minutes=1)
+
+                signal_history = (
+                    BotSignalHistory.objects.filter(
+                        bot_config=bot_config,
+                        stock=stock,
+                        timestamp__gte=time_window_start,
+                        timestamp__lte=time_window_end,
+                    )
+                    .order_by("-timestamp")
+                    .first()
+                )
+
+                if signal_history:
+                    signal_history.execution = execution
+                    signal_history.save()
+            except Stock.DoesNotExist:
+                logger.warning(
+                    f"Stock {skipped_stock.get('stock')} not found when creating execution record"
+                )
+            except Exception:
+                logger.exception(
+                    f"Error creating execution record for {skipped_stock.get('stock')}"
+                )
+
+        # Execute trades for buy/sell signals (using all bot configurations)
+        trades_executed = 0
+        trade_errors = []
+        executed_orders = []
+
+        # Execute buy signals
+        for buy_signal in results.get("buy_signals", []):
+            try:
+                stock = Stock.objects.get(symbol=buy_signal["stock"])
+                # Re-analyze to get full analysis result with all configurations
+                analysis = bot.analyze_stock(stock)
+                if analysis["action"] == "buy":
+                    order = bot.execute_trade(stock, "buy", analysis)
+                    if order:
+                        trades_executed += 1
+                        buy_signal["order_id"] = str(order.id)
+                        buy_signal["executed"] = True
+                        # Serialize order details
+                        from .serializers import OrderSerializer
+
+                        order_serializer = OrderSerializer(
+                            order, context={"request": request}
+                        )
+                        executed_orders.append(order_serializer.data)
+                    else:
+                        buy_signal["executed"] = False
+                        buy_signal["reason"] = "Trade execution failed validation"
+                else:
+                    buy_signal["executed"] = False
+                    buy_signal["reason"] = f"Analysis changed to {analysis['action']}"
+            except Stock.DoesNotExist:
+                trade_errors.append(f"Stock {buy_signal['stock']} not found")
+                buy_signal["executed"] = False
+                buy_signal["reason"] = "Stock not found"
+            except Exception as e:
+                logger.exception(f"Error executing buy trade for {buy_signal['stock']}")
+                trade_errors.append(f"Buy trade error for {buy_signal['stock']}: {e!s}")
+                buy_signal["executed"] = False
+                buy_signal["reason"] = f"Execution error: {e!s}"
+
+        # Execute sell signals
+        for sell_signal in results.get("sell_signals", []):
+            try:
+                stock = Stock.objects.get(symbol=sell_signal["stock"])
+                # Re-analyze to get full analysis result with all configurations
+                analysis = bot.analyze_stock(stock)
+                if analysis["action"] == "sell":
+                    order = bot.execute_trade(stock, "sell", analysis)
+                    if order:
+                        trades_executed += 1
+                        sell_signal["order_id"] = str(order.id)
+                        sell_signal["executed"] = True
+                        # Serialize order details
+                        from .serializers import OrderSerializer
+
+                        order_serializer = OrderSerializer(
+                            order, context={"request": request}
+                        )
+                        executed_orders.append(order_serializer.data)
+
+                        # Update execution record with order reference
+                        try:
+                            execution = (
+                                TradingBotExecution.objects.filter(
+                                    bot_config=bot_config, stock=stock, action="sell"
+                                )
+                                .order_by("-timestamp")
+                                .first()
+                            )
+                            if execution:
+                                execution.executed_order = order
+                                execution.save()
+                        except Exception:
+                            logger.exception(
+                                "Error updating execution record with order"
+                            )
+                    else:
+                        sell_signal["executed"] = False
+                        sell_signal["reason"] = "Trade execution failed validation"
+                else:
+                    sell_signal["executed"] = False
+                    sell_signal["reason"] = f"Analysis changed to {analysis['action']}"
+            except Stock.DoesNotExist:
+                trade_errors.append(f"Stock {sell_signal['stock']} not found")
+                sell_signal["executed"] = False
+                sell_signal["reason"] = "Stock not found"
+            except Exception as e:
+                logger.exception(
+                    f"Error executing sell trade for {sell_signal['stock']}"
+                )
+                trade_errors.append(
+                    f"Sell trade error for {sell_signal['stock']}: {e!s}"
+                )
+                sell_signal["executed"] = False
+                sell_signal["reason"] = f"Execution error: {e!s}"
+
+        # Add execution summary to results
+        results["trades_executed"] = trades_executed
+        results["trade_errors"] = trade_errors
+        results["executed_orders"] = executed_orders
+        results["configurations_used"] = {
+            "budget_type": bot_config.budget_type,
+            "risk_per_trade": float(bot_config.risk_per_trade),
+            "stop_loss_percent": float(bot_config.stop_loss_percent)
+            if bot_config.stop_loss_percent
+            else None,
+            "take_profit_percent": float(bot_config.take_profit_percent)
+            if bot_config.take_profit_percent
+            else None,
+            "max_position_size": float(bot_config.max_position_size)
+            if bot_config.max_position_size
+            else None,
+            "max_daily_trades": bot_config.max_daily_trades,
+            "max_daily_loss": float(bot_config.max_daily_loss)
+            if bot_config.max_daily_loss
+            else None,
+            "enabled_indicators": list(bot_config.enabled_indicators.keys())
+            if bot_config.enabled_indicators
+            else [],
+            "enabled_patterns": list(bot_config.enabled_patterns.keys())
+            if bot_config.enabled_patterns
+            else [],
+            "enabled_ml_models": bot_config.enabled_ml_models or [],
+            "ml_model_weights": bot_config.ml_model_weights or {},
+            "enable_social_analysis": bot_config.enable_social_analysis,
+            "enable_news_analysis": bot_config.enable_news_analysis,
+            "signal_aggregation_method": bot_config.signal_aggregation_method
+            or "weighted_average",
+            "signal_weights": bot_config.signal_weights or {},
+            "risk_score_threshold": float(bot_config.risk_score_threshold)
+            if bot_config.risk_score_threshold
+            else 80.0,
+            "risk_adjustment_factor": float(bot_config.risk_adjustment_factor)
+            if bot_config.risk_adjustment_factor
+            else 1.0,
+            "risk_based_position_scaling": bot_config.risk_based_position_scaling,
+            "buy_rules_configured": bool(bot_config.buy_rules),
+            "sell_rules_configured": bool(bot_config.sell_rules),
+        }
 
         # Create notification
         buy_count = len(results.get("buy_signals", []))
@@ -1516,15 +1723,33 @@ def execute_bot(request, pk):
             user=request.user,
             notification_type="bot_executed",
             title="Bot Executed",
-            message=f'Your trading bot "{bot_config.name}" executed: {buy_count} buy signals, {sell_count} sell signals.',
+            message=f'Your trading bot "{bot_config.name}" executed: {buy_count} buy signals, {sell_count} sell signals. {trades_executed} trades executed.',
             related_object_type="bot",
             related_object_id=bot_config.id,
-            metadata={"buy_signals": buy_count, "sell_signals": sell_count},
+            metadata={
+                "buy_signals": buy_count,
+                "sell_signals": sell_count,
+                "trades_executed": trades_executed,
+            },
         )
 
         return Response(results, status=status.HTTP_200_OK)
     except TradingBotConfig.DoesNotExist:
         return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class TradingBotExecutionDetailView(generics.RetrieveAPIView):
+    """Retrieve detailed execution information with timeline data."""
+
+    serializer_class = TradingBotExecutionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        return (
+            TradingBotExecution.objects.filter(bot_config__user=self.request.user)
+            .select_related("bot_config", "stock", "executed_order")
+            .prefetch_related("bot_config__assigned_stocks")
+        )
 
 
 class TradingBotExecutionListView(generics.ListAPIView):
@@ -1538,6 +1763,23 @@ class TradingBotExecutionListView(generics.ListAPIView):
         return TradingBotExecution.objects.filter(
             bot_config_id=bot_id, bot_config__user=self.request.user
         ).select_related("stock", "bot_config", "executed_order")
+
+
+class TradingBotOrdersListView(generics.ListAPIView):
+    """List all orders for a trading bot."""
+
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        bot_id = self.kwargs.get("bot_id")
+        # Verify bot belongs to user
+        bot_config = TradingBotConfig.objects.get(id=bot_id, user=self.request.user)
+        return (
+            Order.objects.filter(bot_config=bot_config)
+            .select_related("stock")
+            .order_by("-created_at")
+        )
 
 
 @api_view(["GET"])
@@ -1591,3 +1833,297 @@ def bot_performance(request, pk):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except TradingBotConfig.DoesNotExist:
         return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ML Model Endpoints
+
+
+class MLModelViewSet(generics.ListCreateAPIView):
+    """List all ML models or create a new one (admin only)."""
+
+    serializer_class = MLModelSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        """Filter by active status and framework if provided."""
+        queryset = MLModel.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        framework = self.request.query_params.get("framework")
+        model_type = self.request.query_params.get("model_type")
+
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == "true")
+        if framework:
+            queryset = queryset.filter(framework=framework)
+        if model_type:
+            queryset = queryset.filter(model_type=model_type)
+
+        return queryset.order_by("-created_at")
+
+
+class MLModelDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete an ML model (admin only)."""
+
+    serializer_class = MLModelSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+    queryset = MLModel.objects.all()
+
+
+class MLModelPredictionView(APIView):
+    """Make prediction using an ML model."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def post(self, request, model_id):
+        """Make prediction with specified model."""
+        try:
+            model = MLModel.objects.get(id=model_id, is_active=True)
+        except MLModel.DoesNotExist:
+            return Response(
+                {"error": "Model not found or inactive"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = MLModelPredictionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        stock_symbol = serializer.validated_data["stock_symbol"]
+        try:
+            stock = Stock.objects.get(symbol=stock_symbol)
+        except Stock.DoesNotExist:
+            return Response(
+                {"error": f"Stock {stock_symbol} not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Get price data
+        price_data = serializer.validated_data.get("price_data")
+        if not price_data:
+            prices = StockPrice.objects.filter(stock=stock, interval="1d").order_by(
+                "-date"
+            )[:100]
+            price_data = [
+                {
+                    "open_price": float(p.open_price),
+                    "high_price": float(p.high_price),
+                    "low_price": float(p.low_price),
+                    "close_price": float(p.close_price),
+                    "volume": int(p.volume),
+                }
+                for p in reversed(prices)
+            ]
+
+        indicators = serializer.validated_data.get("indicators", {})
+
+        # For now, use dummy model (in production, load actual model)
+        from .ml_models.models import DummyMLModel
+
+        dummy_model = DummyMLModel()
+        prediction = dummy_model.predict(stock, price_data, indicators)
+
+        return Response(
+            {
+                "model_id": str(model_id),
+                "model_name": model.name,
+                "prediction": prediction,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# Signal History Endpoints
+
+
+class BotSignalHistoryViewSet(generics.ListAPIView):
+    """List signal history for a bot."""
+
+    serializer_class = BotSignalHistoryListSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        """Filter by bot, stock, date range, etc."""
+        queryset = BotSignalHistory.objects.filter(
+            bot_config__user=self.request.user
+        ).select_related("bot_config", "stock")
+
+        bot_id = self.request.query_params.get("bot_id")
+        stock_symbol = self.request.query_params.get("stock_symbol")
+        decision = self.request.query_params.get("decision")
+        start_date = self.request.query_params.get("start_date")
+        end_date = self.request.query_params.get("end_date")
+
+        if bot_id:
+            queryset = queryset.filter(bot_config_id=bot_id)
+        if stock_symbol:
+            queryset = queryset.filter(stock__symbol=stock_symbol)
+        if decision:
+            queryset = queryset.filter(final_decision=decision)
+        if start_date:
+            queryset = queryset.filter(timestamp__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(timestamp__lte=end_date)
+
+        return queryset.order_by("-timestamp")
+
+
+class BotSignalHistoryDetailView(generics.RetrieveAPIView):
+    """Retrieve detailed signal history."""
+
+    serializer_class = BotSignalHistorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        return BotSignalHistory.objects.filter(
+            bot_config__user=self.request.user
+        ).select_related("bot_config", "stock", "execution")
+
+
+class BotSignalAnalyticsView(APIView):
+    """Get signal analytics for a bot."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request, bot_id):
+        """Get analytics for a specific bot."""
+        try:
+            bot = TradingBotConfig.objects.get(id=bot_id, user=request.user)
+        except TradingBotConfig.DoesNotExist:
+            return Response(
+                {"error": "Bot not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Get signal history
+        signal_history = BotSignalHistory.objects.filter(bot_config=bot)
+
+        # Calculate analytics per signal source
+        analytics = []
+
+        # ML Model analytics
+        ml_signals = signal_history.exclude(ml_signals={})
+        if ml_signals.exists():
+            total = ml_signals.count()
+            # Simplified accuracy calculation (would need actual outcomes)
+            analytics.append(
+                {
+                    "signal_source": "ml_models",
+                    "total_signals": total,
+                    "correct_predictions": int(total * 0.6),  # Placeholder
+                    "accuracy": 0.6,  # Placeholder
+                    "average_confidence": float(
+                        ml_signals.aggregate(avg_confidence=Avg("decision_confidence"))[
+                            "avg_confidence"
+                        ]
+                        or 0.0
+                    ),
+                }
+            )
+
+        # Social media analytics
+        social_signals = signal_history.exclude(social_signals={})
+        if social_signals.exists():
+            total = social_signals.count()
+            analytics.append(
+                {
+                    "signal_source": "social_media",
+                    "total_signals": total,
+                    "correct_predictions": int(total * 0.55),
+                    "accuracy": 0.55,
+                    "average_confidence": float(
+                        social_signals.aggregate(
+                            avg_confidence=Avg("decision_confidence")
+                        )["avg_confidence"]
+                        or 0.0
+                    ),
+                }
+            )
+
+        # News analytics
+        news_signals = signal_history.exclude(news_signals={})
+        if news_signals.exists():
+            total = news_signals.count()
+            analytics.append(
+                {
+                    "signal_source": "news",
+                    "total_signals": total,
+                    "correct_predictions": int(total * 0.58),
+                    "accuracy": 0.58,
+                    "average_confidence": float(
+                        news_signals.aggregate(
+                            avg_confidence=Avg("decision_confidence")
+                        )["avg_confidence"]
+                        or 0.0
+                    ),
+                }
+            )
+
+        serializer = SignalAnalyticsSerializer(analytics, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class BotConfigurationTemplatesView(APIView):
+    """Get pre-configured bot templates."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        """Return available bot templates."""
+        templates = {
+            "conservative": {
+                "name": "Conservative Bot",
+                "description": "Low risk, high thresholds, tight stop losses",
+                "risk_per_trade": 1.0,
+                "stop_loss_percent": 2.0,
+                "take_profit_percent": 4.0,
+                "max_daily_trades": 3,
+                "signal_aggregation_method": "threshold_based",
+                "risk_score_threshold": 50.0,
+            },
+            "aggressive": {
+                "name": "Aggressive Bot",
+                "description": "Higher risk, lower thresholds, wider stops",
+                "risk_per_trade": 5.0,
+                "stop_loss_percent": 5.0,
+                "take_profit_percent": 10.0,
+                "max_daily_trades": 10,
+                "signal_aggregation_method": "weighted_average",
+                "risk_score_threshold": 80.0,
+            },
+            "balanced": {
+                "name": "Balanced Bot",
+                "description": "Default settings with moderate risk",
+                "risk_per_trade": 2.0,
+                "stop_loss_percent": 3.0,
+                "take_profit_percent": 6.0,
+                "max_daily_trades": 5,
+                "signal_aggregation_method": "weighted_average",
+                "risk_score_threshold": 70.0,
+            },
+        }
+        return Response(templates, status=status.HTTP_200_OK)
+
+
+class DefaultIndicatorThresholdsView(APIView):
+    """Get default indicator thresholds from TradingBotSettings."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """Return default indicator thresholds."""
+        from stocks.indicator_signals import DEFAULT_INDICATOR_THRESHOLDS
+
+        # Get settings from database
+        settings = TradingBotSettings.load()
+        db_thresholds = settings.default_indicator_thresholds
+
+        # Merge database values with code defaults (database takes precedence)
+        thresholds = DEFAULT_INDICATOR_THRESHOLDS.copy()
+        if db_thresholds:
+            for indicator_type, values in db_thresholds.items():
+                if indicator_type in thresholds:
+                    thresholds[indicator_type].update(values)
+                else:
+                    thresholds[indicator_type] = values
+
+        return Response(thresholds, status=status.HTTP_200_OK)

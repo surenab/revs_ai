@@ -1026,12 +1026,100 @@ class TradingBotConfig(models.Model):
         help_text=_("Take profit percentage (0.01-100)"),
     )
 
+    # ML Models configuration
+    enabled_ml_models = models.JSONField(
+        _("enabled ml models"),
+        default=list,
+        blank=True,
+        help_text=_("List of ML model IDs to use"),
+    )
+    ml_model_weights = models.JSONField(
+        _("ml model weights"),
+        default=dict,
+        blank=True,
+        help_text=_("Weights for each ML model (model_id: weight)"),
+    )
+
+    # Signal sources
+    enable_social_analysis = models.BooleanField(
+        _("enable social analysis"),
+        default=False,
+        help_text=_("Enable social media sentiment analysis"),
+    )
+    enable_news_analysis = models.BooleanField(
+        _("enable news analysis"),
+        default=False,
+        help_text=_("Enable news sentiment analysis"),
+    )
+
+    # Signal aggregation
+    signal_aggregation_method = models.CharField(
+        _("signal aggregation method"),
+        max_length=20,
+        choices=[
+            ("weighted_average", _("Weighted Average")),
+            ("ensemble_voting", _("Ensemble Voting")),
+            ("threshold_based", _("Threshold Based")),
+            ("custom_rule", _("Custom Rule")),
+        ],
+        default="weighted_average",
+        help_text=_("Method to combine multiple signals"),
+    )
+    signal_weights = models.JSONField(
+        _("signal weights"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "Weights for each signal type (ml, indicators, patterns, social, news)"
+        ),
+    )
+    signal_thresholds = models.JSONField(
+        _("signal thresholds"),
+        default=dict,
+        blank=True,
+        help_text=_("Minimum thresholds for signals (confidence, strength, count)"),
+    )
+    risk_score_threshold = models.DecimalField(
+        _("risk score threshold"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Maximum risk score to allow trading (0-100)"),
+    )
+    risk_adjustment_factor = models.DecimalField(
+        _("risk adjustment factor"),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.40"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MinValueValidator(Decimal("1.00")),
+        ],
+        help_text=_("How much risk reduces signal confidence (0-1)"),
+    )
+    risk_based_position_scaling = models.BooleanField(
+        _("risk based position scaling"),
+        default=True,
+        help_text=_("Automatically reduce position size when risk score is high"),
+    )
+
     # Trading rules
     enabled_indicators = models.JSONField(
         _("enabled indicators"),
         default=dict,
         blank=True,
         help_text=_("Indicator configurations (JSON)"),
+    )
+    indicator_thresholds = models.JSONField(
+        _("indicator thresholds"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "Custom thresholds for indicator signals (overrides defaults). "
+            "Format: {'rsi': {'oversold': 30, 'overbought': 70}, ...}"
+        ),
     )
     enabled_patterns = models.JSONField(
         _("enabled patterns"),
@@ -1159,3 +1247,320 @@ class TradingBotExecution(models.Model):
 
     def __str__(self):
         return f"{self.bot_config.name} - {self.stock.symbol} - {self.get_action_display()} @ {self.timestamp}"
+
+
+class MLModel(models.Model):
+    """
+    Model for storing registered ML models with metadata.
+    """
+
+    MODEL_TYPE_CHOICES = [
+        ("classification", _("Classification")),
+        ("regression", _("Regression")),
+    ]
+
+    FRAMEWORK_CHOICES = [
+        ("sklearn", _("scikit-learn")),
+        ("pytorch", _("PyTorch")),
+        ("tensorflow", _("TensorFlow")),
+        ("custom", _("Custom")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(
+        _("name"), max_length=200, help_text=_("Model name/identifier")
+    )
+    model_type = models.CharField(
+        _("model type"),
+        max_length=20,
+        choices=MODEL_TYPE_CHOICES,
+        help_text=_("Type of model: classification or regression"),
+    )
+    framework = models.CharField(
+        _("framework"),
+        max_length=20,
+        choices=FRAMEWORK_CHOICES,
+        help_text=_("ML framework used"),
+    )
+    version = models.CharField(
+        _("version"), max_length=50, default="1.0.0", help_text=_("Model version")
+    )
+    description = models.TextField(
+        _("description"), blank=True, help_text=_("Model description")
+    )
+    parameters = models.JSONField(
+        _("parameters"),
+        default=dict,
+        blank=True,
+        help_text=_("Model parameters and configuration (JSON)"),
+    )
+    is_active = models.BooleanField(
+        _("active"), default=True, help_text=_("Is model active and available")
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("ML Model")
+        verbose_name_plural = _("ML Models")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["is_active", "model_type"]),
+            models.Index(fields=["framework", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.framework}) - {self.get_model_type_display()}"
+
+    def get_metadata(self) -> dict:
+        """Get model metadata."""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "model_type": self.model_type,
+            "framework": self.framework,
+            "version": self.version,
+            "description": self.description,
+            "parameters": self.parameters,
+            "is_active": self.is_active,
+        }
+
+
+class BotSignalHistory(models.Model):
+    """
+    Model for tracking all signals and decisions for bot analysis.
+    Provides transparent audit trail of all signal sources and decision-making.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bot_config = models.ForeignKey(
+        TradingBotConfig,
+        on_delete=models.CASCADE,
+        related_name="signal_history",
+        help_text=_("Bot configuration that generated this signal"),
+    )
+    stock = models.ForeignKey(
+        Stock,
+        on_delete=models.CASCADE,
+        related_name="signal_history",
+        help_text=_("Stock being analyzed"),
+    )
+    timestamp = models.DateTimeField(
+        _("timestamp"), auto_now_add=True, help_text=_("When analysis was performed")
+    )
+    price_data_snapshot = models.JSONField(
+        _("price data snapshot"),
+        default=dict,
+        blank=True,
+        help_text=_("Snapshot of price data at analysis time"),
+    )
+    ml_signals = models.JSONField(
+        _("ml signals"),
+        default=dict,
+        blank=True,
+        help_text=_("ML model predictions and signals"),
+    )
+    social_signals = models.JSONField(
+        _("social signals"),
+        default=dict,
+        blank=True,
+        help_text=_("Social media sentiment signals"),
+    )
+    news_signals = models.JSONField(
+        _("news signals"),
+        default=dict,
+        blank=True,
+        help_text=_("News sentiment signals"),
+    )
+    indicator_signals = models.JSONField(
+        _("indicator signals"),
+        default=dict,
+        blank=True,
+        help_text=_("Technical indicator signals"),
+    )
+    pattern_signals = models.JSONField(
+        _("pattern signals"),
+        default=dict,
+        blank=True,
+        help_text=_("Chart pattern signals"),
+    )
+    aggregated_signal = models.JSONField(
+        _("aggregated signal"),
+        default=dict,
+        blank=True,
+        help_text=_("Combined signal after aggregation"),
+    )
+    final_decision = models.CharField(
+        _("final decision"),
+        max_length=10,
+        choices=[("buy", _("Buy")), ("sell", _("Sell")), ("hold", _("Hold"))],
+        help_text=_("Final trading decision"),
+    )
+    decision_confidence = models.DecimalField(
+        _("decision confidence"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Confidence in final decision (0-100)"),
+    )
+    risk_score = models.DecimalField(
+        _("risk score"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Calculated risk score (0-100)"),
+    )
+    execution = models.ForeignKey(
+        TradingBotExecution,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="signal_history",
+        help_text=_("Related bot execution if trade was executed"),
+    )
+
+    class Meta:
+        verbose_name = _("Bot Signal History")
+        verbose_name_plural = _("Bot Signal Histories")
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["bot_config", "timestamp"]),
+            models.Index(fields=["stock", "timestamp"]),
+            models.Index(fields=["final_decision", "timestamp"]),
+        ]
+
+    def __str__(self):
+        return f"{self.bot_config.name} - {self.stock.symbol} - {self.final_decision} @ {self.timestamp}"
+
+
+class NewsSource(models.Model):
+    """
+    Model for configuring news sources.
+    """
+
+    SOURCE_TYPE_CHOICES = [
+        ("api", _("API")),
+        ("scraper", _("Web Scraper")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(_("name"), max_length=200, help_text=_("News source name"))
+    source_type = models.CharField(
+        _("source type"),
+        max_length=20,
+        choices=SOURCE_TYPE_CHOICES,
+        help_text=_("Type of news source"),
+    )
+    api_config = models.JSONField(
+        _("api config"),
+        default=dict,
+        blank=True,
+        help_text=_("API configuration (keys, endpoints, etc.)"),
+    )
+    is_active = models.BooleanField(
+        _("active"), default=True, help_text=_("Is source active")
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("News Source")
+        verbose_name_plural = _("News Sources")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_source_type_display()})"
+
+
+class SocialMediaSource(models.Model):
+    """
+    Model for configuring social media sources.
+    """
+
+    PLATFORM_CHOICES = [
+        ("twitter", _("Twitter")),
+        ("reddit", _("Reddit")),
+        ("stocktwits", _("StockTwits")),
+        ("other", _("Other")),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(
+        _("name"), max_length=200, help_text=_("Social media source name")
+    )
+    platform = models.CharField(
+        _("platform"),
+        max_length=20,
+        choices=PLATFORM_CHOICES,
+        help_text=_("Social media platform"),
+    )
+    api_config = models.JSONField(
+        _("api config"),
+        default=dict,
+        blank=True,
+        help_text=_("API configuration (keys, endpoints, etc.)"),
+    )
+    is_active = models.BooleanField(
+        _("active"), default=True, help_text=_("Is source active")
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Social Media Source")
+        verbose_name_plural = _("Social Media Sources")
+        ordering = ["platform", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_platform_display()})"
+
+
+class TradingBotSettings(models.Model):
+    """
+    Singleton model for Trading Bot global settings.
+    Only one instance should exist in the database.
+    """
+
+    id = models.AutoField(primary_key=True)
+    default_indicator_thresholds = models.JSONField(
+        _("default indicator thresholds"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "Default threshold values for all technical indicators. "
+            "These values are used when bot configs don't specify custom thresholds."
+        ),
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Trading Bot Settings")
+        verbose_name_plural = _("Trading Bot Settings")
+
+    def __str__(self):
+        return "Trading Bot Settings"
+
+    def save(self, *args, **kwargs):
+        """
+        Ensure only one instance exists.
+        """
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """
+        Prevent deletion of the singleton instance.
+        """
+
+    @classmethod
+    def load(cls):
+        """
+        Get or create the singleton instance.
+        """
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj

@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import { AuthProvider } from "./contexts/AuthContext";
 import { WatchlistProvider } from "./contexts/WatchlistContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { IndicatorThresholdsProvider } from "./contexts/IndicatorThresholdsContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
 import Layout from "./components/layout/Layout";
@@ -29,127 +30,159 @@ import PortfolioPage from "./pages/Portfolio";
 import TradingBots from "./pages/TradingBots";
 import TradingBotDetail from "./pages/TradingBotDetail";
 import EditBot from "./pages/EditBot";
+import BotSignalHistoryPage from "./pages/BotSignalHistory";
+import BotExecutionDetail from "./pages/BotExecutionDetail";
+import BotSystemDocumentation from "./pages/admin/BotSystemDocumentation";
 
 function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <Router>
-          <div className="App">
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
+        <IndicatorThresholdsProvider>
+          <Router>
+            <div className="App">
+              <Routes>
+                {/* Public routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
 
-              {/* Protected routes */}
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <WatchlistProvider>
-                      <Layout />
-                    </WatchlistProvider>
-                  </ProtectedRoute>
-                }
+                {/* Protected routes */}
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <WatchlistProvider>
+                        <Layout />
+                      </WatchlistProvider>
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="profile" element={<Profile />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="contact-support" element={<ContactSupport />} />
+
+                  {/* Stock routes */}
+                  <Route path="stocks" element={<Stocks />} />
+                  <Route path="stocks/:symbol" element={<StockDetail />} />
+
+                  {/* Indicator routes */}
+                  <Route path="indicators" element={<Indicators />} />
+                  <Route path="indicators/:id" element={<IndicatorDetail />} />
+
+                  {/* Pattern routes */}
+                  <Route path="patterns" element={<Patterns />} />
+                  <Route path="patterns/:id" element={<PatternDetail />} />
+
+                  {/* Portfolio route */}
+                  <Route path="portfolio" element={<PortfolioPage />} />
+
+                  {/* Trading Bots routes - Admin only */}
+                  <Route
+                    path="trading-bots"
+                    element={
+                      <AdminRoute>
+                        <TradingBots />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="trading-bots/:id"
+                    element={
+                      <AdminRoute>
+                        <TradingBotDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="trading-bots/:id/edit"
+                    element={
+                      <AdminRoute>
+                        <EditBot />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="trading-bots/:botId/signals"
+                    element={
+                      <AdminRoute>
+                        <BotSignalHistoryPage />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="executions/:id"
+                    element={
+                      <AdminRoute>
+                        <BotExecutionDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="trading-bots/documentation"
+                    element={
+                      <AdminRoute>
+                        <BotSystemDocumentation />
+                      </AdminRoute>
+                    }
+                  />
+                </Route>
+
+                {/* Catch all route */}
+                <Route
+                  path="*"
+                  element={<Navigate to="/dashboard" replace />}
+                />
+              </Routes>
+
+              {/* Toast notifications */}
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  duration: 4000,
+                  style: {
+                    background: "rgba(255, 255, 255, 0.1)",
+                    backdropFilter: "blur(10px)",
+                    color: "#fff",
+                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                  },
+                  success: {
+                    iconTheme: {
+                      primary: "#10b981",
+                      secondary: "#fff",
+                    },
+                  },
+                  error: {
+                    iconTheme: {
+                      primary: "#ef4444",
+                      secondary: "#fff",
+                    },
+                  },
+                }}
               >
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="profile" element={<Profile />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="contact-support" element={<ContactSupport />} />
-
-                {/* Stock routes */}
-                <Route path="stocks" element={<Stocks />} />
-                <Route path="stocks/:symbol" element={<StockDetail />} />
-
-                {/* Indicator routes */}
-                <Route path="indicators" element={<Indicators />} />
-                <Route path="indicators/:id" element={<IndicatorDetail />} />
-
-                {/* Pattern routes */}
-                <Route path="patterns" element={<Patterns />} />
-                <Route path="patterns/:id" element={<PatternDetail />} />
-
-                {/* Portfolio route */}
-                <Route path="portfolio" element={<PortfolioPage />} />
-
-                {/* Trading Bots routes - Admin only */}
-                <Route
-                  path="trading-bots"
-                  element={
-                    <AdminRoute>
-                      <TradingBots />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="trading-bots/:id"
-                  element={
-                    <AdminRoute>
-                      <TradingBotDetail />
-                    </AdminRoute>
-                  }
-                />
-                <Route
-                  path="trading-bots/:id/edit"
-                  element={
-                    <AdminRoute>
-                      <EditBot />
-                    </AdminRoute>
-                  }
-                />
-              </Route>
-
-              {/* Catch all route */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-
-            {/* Toast notifications */}
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: "rgba(255, 255, 255, 0.1)",
-                  backdropFilter: "blur(10px)",
-                  color: "#fff",
-                  border: "1px solid rgba(255, 255, 255, 0.2)",
-                },
-                success: {
-                  iconTheme: {
-                    primary: "#10b981",
-                    secondary: "#fff",
-                  },
-                },
-                error: {
-                  iconTheme: {
-                    primary: "#ef4444",
-                    secondary: "#fff",
-                  },
-                },
-              }}
-            >
-              {(t) => (
-                <ToastBar toast={t}>
-                  {({ icon, message }) => (
-                    <div className="toast-container flex items-center gap-2 w-full group">
-                      {icon}
-                      <div className="flex-1">{message}</div>
-                      <button
-                        onClick={() => toast.dismiss(t.id)}
-                        className="toast-close-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 hover:bg-white/20 rounded flex items-center justify-center min-w-[20px] min-h-[20px] text-white/80 hover:text-white"
-                        aria-label="Close"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </ToastBar>
-              )}
-            </Toaster>
-          </div>
-        </Router>
+                {(t) => (
+                  <ToastBar toast={t}>
+                    {({ icon, message }) => (
+                      <div className="toast-container flex items-center gap-2 w-full group">
+                        {icon}
+                        <div className="flex-1">{message}</div>
+                        <button
+                          onClick={() => toast.dismiss(t.id)}
+                          className="toast-close-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 hover:bg-white/20 rounded flex items-center justify-center min-w-[20px] min-h-[20px] text-white/80 hover:text-white"
+                          aria-label="Close"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </ToastBar>
+                )}
+              </Toaster>
+            </div>
+          </Router>
+        </IndicatorThresholdsProvider>
       </NotificationProvider>
     </AuthProvider>
   );

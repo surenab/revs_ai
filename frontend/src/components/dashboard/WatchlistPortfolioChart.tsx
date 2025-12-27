@@ -156,7 +156,7 @@ const WatchlistPortfolioChart: React.FC = () => {
     stocksData.forEach((stock) => {
       stock.data.forEach((point) => {
         // Handle both StockPrice (has date) and IntradayPrice (has timestamp)
-        const dateOrTimestamp = 'date' in point ? point.date : point.timestamp;
+        const dateOrTimestamp = "date" in point ? point.date : point.timestamp;
         const timeKey = shouldUseIntradayData(selectedPeriod)
           ? format(parseISO(dateOrTimestamp), "HH:mm")
           : format(parseISO(dateOrTimestamp), "MM/dd");
@@ -321,12 +321,14 @@ const WatchlistPortfolioChart: React.FC = () => {
       </div>
 
       {/* Chart */}
-      <div className="h-48 sm:h-56 md:h-64 min-h-[192px] sm:min-h-[224px] md:min-h-[256px] w-full">
+      <div className="h-48 sm:h-56 md:h-64 min-h-[192px] sm:min-h-[224px] md:min-h-[256px] w-full relative">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-white/40 mx-auto mb-2 animate-spin" />
-              <p className="text-white/60 text-sm sm:text-base">Loading chart data...</p>
+              <p className="text-white/60 text-sm sm:text-base">
+                Loading chart data...
+              </p>
             </div>
           </div>
         ) : error ? (
@@ -337,64 +339,55 @@ const WatchlistPortfolioChart: React.FC = () => {
             </div>
           </div>
         ) : chartData.length > 0 && stocksData.length > 0 ? (
-          <div
-            className="w-full h-full"
-            style={{
-              width: "100%",
-              height: "100%",
-              minHeight: "192px",
-              minWidth: 0,
-            }}
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minHeight={192}
+            minWidth={0}
           >
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-              minHeight={192}
-              minWidth={0}
-              aspect={undefined}
+            <LineChart
+              data={chartData}
+              margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
             >
-              <LineChart
-                data={chartData}
-                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis
-                  dataKey="time"
-                  stroke="#9CA3AF"
-                  fontSize={10}
-                  tick={{ fill: "#9CA3AF" }}
-                  interval="preserveStartEnd"
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="time"
+                stroke="#9CA3AF"
+                fontSize={10}
+                tick={{ fill: "#9CA3AF" }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                stroke="#9CA3AF"
+                fontSize={10}
+                tick={{ fill: "#9CA3AF" }}
+                tickFormatter={(value: number) =>
+                  `$${Number(value).toFixed(0)}`
+                }
+                width={40}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              {stocksData.map((stock) => (
+                <Line
+                  key={stock.symbol}
+                  type="monotone"
+                  dataKey={stock.symbol}
+                  stroke={stock.color}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                  activeDot={{ r: 4, fill: stock.color }}
                 />
-                <YAxis
-                  stroke="#9CA3AF"
-                  fontSize={10}
-                  tick={{ fill: "#9CA3AF" }}
-                  tickFormatter={(value: number) =>
-                    `$${Number(value).toFixed(0)}`
-                  }
-                  width={40}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                {stocksData.map((stock) => (
-                  <Line
-                    key={stock.symbol}
-                    type="monotone"
-                    dataKey={stock.symbol}
-                    stroke={stock.color}
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls={false}
-                    activeDot={{ r: 4, fill: stock.color }}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
         ) : (
           <div className="h-full flex items-center justify-center">
             <div className="text-center px-2">
               <BarChart3 className="w-10 h-10 sm:w-12 sm:h-12 text-white/40 mx-auto mb-2" />
-              <p className="text-white/60 text-sm sm:text-base">No chart data available</p>
+              <p className="text-white/60 text-sm sm:text-base">
+                No chart data available
+              </p>
               <p className="text-white/40 text-xs sm:text-sm">
                 {stocksData.length === 0
                   ? "No stock data loaded"

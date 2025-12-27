@@ -4,7 +4,9 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from .models import (
+    BotSignalHistory,
     IntradayPrice,
+    MLModel,
     Order,
     Portfolio,
     Stock,
@@ -909,9 +911,20 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             "stop_loss_percent",
             "take_profit_percent",
             "enabled_indicators",
+            "indicator_thresholds",
             "enabled_patterns",
             "buy_rules",
             "sell_rules",
+            "enabled_ml_models",
+            "ml_model_weights",
+            "enable_social_analysis",
+            "enable_news_analysis",
+            "signal_aggregation_method",
+            "signal_weights",
+            "signal_thresholds",
+            "risk_score_threshold",
+            "risk_adjustment_factor",
+            "risk_based_position_scaling",
             "created_at",
             "updated_at",
         ]
@@ -1023,6 +1036,94 @@ class TradingBotExecutionSerializer(serializers.ModelSerializer):
 
     bot_config_name = serializers.CharField(source="bot_config.name", read_only=True)
     stock_symbol = serializers.CharField(source="stock.symbol", read_only=True)
+    executed_order = serializers.SerializerMethodField()
+    signal_history = serializers.SerializerMethodField()
+    bot_config_settings = serializers.SerializerMethodField()
+
+    def get_executed_order(self, obj):
+        """Get executed order details if available."""
+        if obj.executed_order:
+            # Use OrderSerializer with request context if available
+            request = self.context.get("request")
+            return OrderSerializer(
+                obj.executed_order, context={"request": request}
+            ).data
+        return None
+
+    def get_signal_history(self, obj):
+        """Get related signal history if available."""
+        from datetime import timedelta
+
+        from .models import BotSignalHistory
+
+        # Try to find signal history linked to this execution
+        signal_history = (
+            BotSignalHistory.objects.filter(
+                bot_config=obj.bot_config,
+                stock=obj.stock,
+                timestamp__lte=obj.timestamp,
+            )
+            .order_by("-timestamp")
+            .first()
+        )
+
+        # If no direct link, try to find by timestamp proximity (within 1 minute)
+        if not signal_history:
+            time_window_start = obj.timestamp - timedelta(minutes=1)
+            time_window_end = obj.timestamp + timedelta(minutes=1)
+
+            signal_history = (
+                BotSignalHistory.objects.filter(
+                    bot_config=obj.bot_config,
+                    stock=obj.stock,
+                    timestamp__gte=time_window_start,
+                    timestamp__lte=time_window_end,
+                )
+                .order_by("-timestamp")
+                .first()
+            )
+
+        if signal_history:
+            return {
+                "id": str(signal_history.id),
+                "ml_signals": signal_history.ml_signals or {},
+                "social_signals": signal_history.social_signals or {},
+                "news_signals": signal_history.news_signals or {},
+                "indicator_signals": signal_history.indicator_signals or {},
+                "pattern_signals": signal_history.pattern_signals or {},
+                "aggregated_signal": signal_history.aggregated_signal or {},
+                "final_decision": signal_history.final_decision,
+                "decision_confidence": float(signal_history.decision_confidence)
+                if signal_history.decision_confidence
+                else None,
+                "risk_score": float(signal_history.risk_score)
+                if signal_history.risk_score
+                else None,
+                "timestamp": signal_history.timestamp.isoformat()
+                if signal_history.timestamp
+                else None,
+                "price_data_snapshot": signal_history.price_data_snapshot or {},
+            }
+        return None
+
+    def get_bot_config_settings(self, obj):
+        """Get bot configuration settings for display."""
+        if obj.bot_config:
+            return {
+                "enable_social_analysis": obj.bot_config.enable_social_analysis,
+                "enable_news_analysis": obj.bot_config.enable_news_analysis,
+                "enabled_indicators": list(obj.bot_config.enabled_indicators.keys())
+                if obj.bot_config.enabled_indicators
+                else [],
+                "enabled_patterns": list(obj.bot_config.enabled_patterns.keys())
+                if obj.bot_config.enabled_patterns
+                else [],
+                "indicator_thresholds": obj.bot_config.indicator_thresholds
+                if hasattr(obj.bot_config, "indicator_thresholds")
+                and obj.bot_config.indicator_thresholds
+                else None,
+            }
+        return None
 
     class Meta:
         model = TradingBotExecution
@@ -1038,9 +1139,121 @@ class TradingBotExecutionSerializer(serializers.ModelSerializer):
             "patterns_detected",
             "risk_score",
             "executed_order",
+            "signal_history",
+            "bot_config_settings",
             "timestamp",
         ]
         read_only_fields = ["id", "timestamp"]
+
+
+class MLModelSerializer(serializers.ModelSerializer):
+    """Serializer for MLModel."""
+
+    class Meta:
+        model = MLModel
+        fields = [
+            "id",
+            "name",
+            "model_type",
+            "framework",
+            "version",
+            "description",
+            "parameters",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_parameters(self, value):
+        """Validate parameters JSON."""
+        if not isinstance(value, dict):
+            msg = "Parameters must be a valid JSON object"
+            raise serializers.ValidationError(msg)
+        return value
+
+    def to_representation(self, instance):
+        """Add metadata to representation."""
+        data = super().to_representation(instance)
+        data["metadata"] = instance.get_metadata()
+        return data
+
+
+class MLModelListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for ML model lists."""
+
+    class Meta:
+        model = MLModel
+        fields = ["id", "name", "framework", "model_type", "is_active", "version"]
+
+
+class MLModelPredictionSerializer(serializers.Serializer):
+    """Serializer for ML model prediction requests."""
+
+    stock_symbol = serializers.CharField(required=True)
+    price_data = serializers.ListField(
+        child=serializers.DictField(), required=False, allow_empty=True
+    )
+    indicators = serializers.DictField(required=False, allow_empty=True)
+
+
+class BotSignalHistorySerializer(serializers.ModelSerializer):
+    """Serializer for BotSignalHistory."""
+
+    bot_config_name = serializers.CharField(source="bot_config.name", read_only=True)
+    stock_symbol = serializers.CharField(source="stock.symbol", read_only=True)
+
+    class Meta:
+        model = BotSignalHistory
+        fields = [
+            "id",
+            "bot_config",
+            "bot_config_name",
+            "stock",
+            "stock_symbol",
+            "timestamp",
+            "price_data_snapshot",
+            "ml_signals",
+            "social_signals",
+            "news_signals",
+            "indicator_signals",
+            "pattern_signals",
+            "aggregated_signal",
+            "final_decision",
+            "decision_confidence",
+            "risk_score",
+            "execution",
+        ]
+        read_only_fields = ["id", "timestamp"]
+
+
+class BotSignalHistoryListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for signal history lists."""
+
+    bot_config_name = serializers.CharField(source="bot_config.name", read_only=True)
+    stock_symbol = serializers.CharField(source="stock.symbol", read_only=True)
+
+    class Meta:
+        model = BotSignalHistory
+        fields = [
+            "id",
+            "bot_config_name",
+            "stock_symbol",
+            "timestamp",
+            "final_decision",
+            "decision_confidence",
+            "risk_score",
+        ]
+
+
+class SignalAnalyticsSerializer(serializers.Serializer):
+    """Serializer for signal analytics."""
+
+    signal_source = serializers.CharField()
+    accuracy = serializers.FloatField()
+    total_signals = serializers.IntegerField()
+    correct_predictions = serializers.IntegerField()
+    average_confidence = serializers.FloatField()
 
 
 class BotPerformanceSerializer(serializers.Serializer):

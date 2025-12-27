@@ -14,6 +14,16 @@ import {
   Clock,
   CheckCircle,
   Edit,
+  Brain,
+  MessageSquare,
+  Newspaper,
+  GitMerge,
+  Shield,
+  LineChart,
+  Layers,
+  History,
+  FileText,
+  Maximize,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type {
@@ -22,20 +32,36 @@ import type {
   BotPerformance,
   Stock,
   Portfolio,
+  MLModel,
+  Order,
 } from "../lib/api";
-import { botAPI, stockAPI, portfolioAPI } from "../lib/api";
+import { botAPI, stockAPI, portfolioAPI, mlModelAPI } from "../lib/api";
+import {
+  AGGREGATION_METHODS,
+  SIGNAL_SOURCE_WEIGHTS,
+  INDICATORS,
+  PATTERNS,
+  getIndicatorThresholds,
+  getThresholdLabel,
+  formatThresholdValue,
+} from "../lib/botConstants";
+import { useIndicatorThresholds } from "../contexts/IndicatorThresholdsContext";
+import BotSignalHistoryTab from "../components/bots/BotSignalHistoryTab";
 
 const TradingBotDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { thresholds: defaultThresholds } = useIndicatorThresholds();
 
   const [bot, setBot] = useState<TradingBotConfig | null>(null);
   const [executions, setExecutions] = useState<TradingBotExecution[]>([]);
   const [performance, setPerformance] = useState<BotPerformance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "executions" | "performance"
+    "overview" | "executions" | "performance" | "signals" | "orders"
   >("overview");
+  const [botOrders, setBotOrders] = useState<Order[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -49,9 +75,31 @@ const TradingBotDetail: React.FC = () => {
         fetchExecutions(bot.id);
       } else if (activeTab === "performance") {
         fetchPerformance(bot.id);
+      } else if (activeTab === "orders") {
+        fetchBotOrders(bot.id);
       }
     }
   }, [bot, activeTab]);
+
+  const fetchBotOrders = async (botId: string) => {
+    setIsLoadingOrders(true);
+    try {
+      const response = await botAPI.getBotOrders(botId);
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setBotOrders(data);
+      } else if (data && typeof data === "object" && "results" in data) {
+        setBotOrders(Array.isArray(data.results) ? data.results : []);
+      } else {
+        setBotOrders([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch bot orders:", error);
+      setBotOrders([]);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  };
 
   const fetchBot = async () => {
     if (!id) return;
@@ -114,14 +162,42 @@ const TradingBotDetail: React.FC = () => {
     try {
       const response = await botAPI.executeBot(bot.id);
       const result = response.data;
-      toast.success(
-        `Bot executed: ${result.buy_signals.length} buy signals, ${result.sell_signals.length} sell signals`
-      );
-      if (activeTab === "executions") {
-        fetchExecutions(bot.id);
+
+      const tradesExecuted = result.trades_executed || 0;
+      const buyExecuted = result.buy_signals.filter(
+        (s: any) => s.executed
+      ).length;
+      const sellExecuted = result.sell_signals.filter(
+        (s: any) => s.executed
+      ).length;
+
+      let message = `Bot executed: ${result.buy_signals.length} buy signals, ${result.sell_signals.length} sell signals`;
+      if (tradesExecuted > 0) {
+        message += `. ${tradesExecuted} trades executed (${buyExecuted} buys, ${sellExecuted} sells)`;
+      } else {
+        message += `. No trades executed`;
+      }
+
+      if (result.trade_errors && result.trade_errors.length > 0) {
+        message += `. ${result.trade_errors.length} error(s) occurred`;
+        toast.error(message);
+        console.warn("Trade errors:", result.trade_errors);
+      } else {
+        toast.success(message);
+      }
+
+      // Always refresh executions after execution, regardless of active tab
+      fetchExecutions(bot.id);
+
+      // Also refresh performance and orders if on those tabs
+      if (activeTab === "performance") {
+        fetchPerformance(bot.id);
+      } else if (activeTab === "orders") {
+        fetchBotOrders(bot.id);
       }
     } catch (error) {
       toast.error("Failed to execute bot");
+      console.error("Bot execution error:", error);
     }
   };
 
@@ -205,7 +281,17 @@ const TradingBotDetail: React.FC = () => {
               </button>
               <button
                 onClick={() => handleExecuteBot(bot)}
-                className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2"
+                disabled={!bot.is_active}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 ${
+                  bot.is_active
+                    ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                    : "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
+                }`}
+                title={
+                  bot.is_active
+                    ? "Execute Bot"
+                    : "Bot must be active to execute"
+                }
               >
                 <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">Execute</span>
@@ -233,19 +319,38 @@ const TradingBotDetail: React.FC = () => {
         {/* Tabs */}
         <div className="border-b border-gray-700 mb-4 sm:mb-6 overflow-x-auto">
           <div className="flex gap-2 sm:gap-4 min-w-max sm:min-w-0">
-            {(["overview", "executions", "performance"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 sm:px-4 py-2 sm:py-3 border-b-2 transition-colors capitalize font-medium text-sm sm:text-base whitespace-nowrap ${
-                  activeTab === tab
-                    ? "border-blue-500 text-blue-400"
-                    : "border-transparent text-gray-300 hover:text-white"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+            {(
+              [
+                "overview",
+                "executions",
+                "performance",
+                "signals",
+                "orders",
+              ] as const
+            ).map((tab) => {
+              const tabIcons = {
+                overview: Activity,
+                executions: Clock,
+                performance: BarChart3,
+                signals: History,
+                orders: FileText,
+              };
+              const Icon = tabIcons[tab];
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 sm:px-4 py-2 sm:py-3 border-b-2 transition-colors capitalize font-medium text-sm sm:text-base whitespace-nowrap flex items-center gap-2 ${
+                    activeTab === tab
+                      ? "border-blue-500 text-blue-400"
+                      : "border-transparent text-gray-300 hover:text-white"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -256,18 +361,33 @@ const TradingBotDetail: React.FC = () => {
           transition={{ duration: 0.3 }}
         >
           {activeTab === "overview" && (
-            <BotOverviewTab bot={bot} onDelete={handleDeleteBot} />
+            <BotOverviewTab
+              bot={bot}
+              onDelete={handleDeleteBot}
+              defaultThresholds={defaultThresholds}
+            />
           )}
           {activeTab === "executions" && (
             <BotExecutionsTab
               executions={executions}
               onRefresh={() => fetchExecutions(bot.id)}
+              navigate={navigate}
             />
           )}
           {activeTab === "performance" && (
             <BotPerformanceTab
               performance={performance}
               onRefresh={() => fetchPerformance(bot.id)}
+            />
+          )}
+          {activeTab === "signals" && bot && (
+            <BotSignalHistoryTab botId={bot.id} />
+          )}
+          {activeTab === "orders" && bot && (
+            <BotOrdersTab
+              orders={botOrders}
+              isLoading={isLoadingOrders}
+              onRefresh={() => fetchBotOrders(bot.id)}
             />
           )}
         </motion.div>
@@ -280,26 +400,50 @@ const TradingBotDetail: React.FC = () => {
 const BotOverviewTab: React.FC<{
   bot: TradingBotConfig;
   onDelete: (bot: TradingBotConfig) => void;
-}> = ({ bot, onDelete }) => {
+  defaultThresholds: Record<string, Record<string, number>>;
+}> = ({ bot, onDelete, defaultThresholds }) => {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
+  const [mlModels, setMlModels] = useState<MLModel[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingData(true);
       try {
-        // Fetch all stocks
-        const stocksResponse = await stockAPI.getStocks({ page_size: 1000 });
-        const stocksData = stocksResponse.data;
-        const allStocks = Array.isArray(stocksData)
-          ? stocksData
-          : stocksData.results || [];
-        setStocks(allStocks);
+        // Fetch all stocks - use getAllStocks for lightweight data
+        try {
+          const allStocksResponse = await stockAPI.getAllStocks();
+          const allStocks = Array.isArray(allStocksResponse.data)
+            ? allStocksResponse.data
+            : [];
+          setStocks(allStocks);
+        } catch {
+          // Fallback to paginated endpoint if getAllStocks fails
+          const stocksResponse = await stockAPI.getStocks({ page_size: 1000 });
+          const stocksData = stocksResponse.data;
+          const allStocks = Array.isArray(stocksData)
+            ? stocksData
+            : stocksData.results || [];
+          setStocks(allStocks);
+        }
 
         // Fetch portfolio
         const portfolioResponse = await portfolioAPI.getPortfolio();
         setPortfolio(portfolioResponse.data.results || []);
+
+        // Fetch ML models
+        try {
+          const mlModelsResponse = await mlModelAPI.getModels();
+          const modelsData = mlModelsResponse.data;
+          setMlModels(
+            Array.isArray(modelsData)
+              ? modelsData
+              : (modelsData as any).results || []
+          );
+        } catch (error) {
+          console.error("Failed to fetch ML models:", error);
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -313,6 +457,7 @@ const BotOverviewTab: React.FC<{
   // Create maps for quick lookup
   const stockMap = new Map(stocks.map((s) => [s.id, s]));
   const portfolioMap = new Map(portfolio.map((p) => [p.id, p]));
+  const mlModelMap = new Map(mlModels.map((m) => [m.id, m]));
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -524,7 +669,8 @@ const BotOverviewTab: React.FC<{
 
       {/* Enabled Indicators */}
       <div>
-        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <LineChart className="w-5 h-5 text-blue-400" />
           Enabled Indicators
         </h3>
         <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
@@ -533,42 +679,94 @@ const BotOverviewTab: React.FC<{
               No indicators enabled
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {Object.entries(bot.enabled_indicators || {}).map(
-                ([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-2 pb-2 border-b border-gray-600 last:border-0"
-                  >
-                    <span className="text-xs sm:text-sm font-medium text-blue-400 capitalize">
-                      {key}
-                    </span>
-                    <div className="text-xs sm:text-sm text-gray-300">
-                      {typeof value === "boolean" ? (
-                        <span
-                          className={value ? "text-green-400" : "text-red-400"}
-                        >
-                          {value ? "Enabled" : "Disabled"}
+                ([key, value]) => {
+                  const indicatorDef = INDICATORS.find((i) => i.id === key);
+                  const thresholds = getIndicatorThresholds(
+                    key,
+                    bot.indicator_thresholds,
+                    defaultThresholds
+                  );
+
+                  return (
+                    <div
+                      key={key}
+                      className="bg-gray-800/50 rounded p-2 border border-gray-600"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {indicatorDef && (
+                          <indicatorDef.icon className="w-4 h-4 text-blue-400" />
+                        )}
+                        <span className="text-xs sm:text-sm font-medium text-blue-400 capitalize">
+                          {indicatorDef?.name || key}
                         </span>
-                      ) : typeof value === "object" && value !== null ? (
-                        <div className="space-y-1">
-                          {Object.entries(value as Record<string, any>).map(
-                            ([k, v]) => (
-                              <div key={k} className="flex gap-2">
-                                <span className="text-gray-400 capitalize text-xs">
-                                  {k}:
-                                </span>
-                                <span className="text-xs">{String(v)}</span>
-                              </div>
-                            )
-                          )}
+                      </div>
+                      {thresholds && (
+                        <div className="mt-2 pt-2 border-t border-gray-700">
+                          <p className="text-xs text-gray-400 mb-1.5 font-semibold">
+                            Signal Thresholds:
+                          </p>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            {Object.entries(thresholds)
+                              .filter(([k, v]) => {
+                                // Show all thresholds except those that are 0.0 and are auto-detect types
+                                if (v === 0.0) {
+                                  // Only hide if it's an auto-detect type (threshold or touch that's 0)
+                                  return !(
+                                    k.includes("threshold") ||
+                                    k.includes("touch") ||
+                                    k.includes("breakout") ||
+                                    k.includes("breakdown")
+                                  );
+                                }
+                                return true;
+                              })
+                              .map(([thresholdKey, thresholdValue]) => (
+                                <div
+                                  key={thresholdKey}
+                                  className="flex justify-between items-center"
+                                >
+                                  <span className="text-gray-400">
+                                    {getThresholdLabel(thresholdKey)}:
+                                  </span>
+                                  <span className="text-white font-medium">
+                                    {formatThresholdValue(
+                                      thresholdKey,
+                                      thresholdValue
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
                         </div>
-                      ) : (
-                        <span>{String(value)}</span>
                       )}
+                      {typeof value === "object" &&
+                        value !== null &&
+                        Object.keys(value).length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-700">
+                            <p className="text-xs text-gray-400 mb-1.5 font-semibold">
+                              Configuration:
+                            </p>
+                            <div className="space-y-1">
+                              {Object.entries(value as Record<string, any>).map(
+                                ([k, v]) => (
+                                  <div key={k} className="flex gap-2 text-xs">
+                                    <span className="text-gray-400 capitalize">
+                                      {k}:
+                                    </span>
+                                    <span className="text-gray-300">
+                                      {String(v)}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
                     </div>
-                  </div>
-                )
+                  );
+                }
               )}
             </div>
           )}
@@ -577,7 +775,8 @@ const BotOverviewTab: React.FC<{
 
       {/* Enabled Patterns */}
       <div>
-        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <Layers className="w-5 h-5 text-purple-400" />
           Enabled Patterns
         </h3>
         <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
@@ -588,43 +787,299 @@ const BotOverviewTab: React.FC<{
           ) : (
             <div className="space-y-2">
               {Object.entries(bot.enabled_patterns || {}).map(
-                ([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-2 pb-2 border-b border-gray-600 last:border-0"
-                  >
-                    <span className="text-xs sm:text-sm font-medium text-purple-400 capitalize">
-                      {key}
-                    </span>
-                    <div className="text-xs sm:text-sm text-gray-300">
-                      {typeof value === "boolean" ? (
-                        <span
-                          className={value ? "text-green-400" : "text-red-400"}
-                        >
-                          {value ? "Enabled" : "Disabled"}
+                ([key, value]) => {
+                  const patternDef = PATTERNS.find((p) => p.id === key);
+                  return (
+                    <div
+                      key={key}
+                      className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-2 pb-2 border-b border-gray-600 last:border-0"
+                    >
+                      <div className="flex items-center gap-2">
+                        {patternDef && (
+                          <patternDef.icon className="w-4 h-4 text-purple-400" />
+                        )}
+                        <span className="text-xs sm:text-sm font-medium text-purple-400 capitalize">
+                          {patternDef?.name || key}
                         </span>
-                      ) : typeof value === "object" && value !== null ? (
-                        <div className="space-y-1">
-                          {Object.entries(value as Record<string, any>).map(
-                            ([k, v]) => (
-                              <div key={k} className="flex gap-2">
-                                <span className="text-gray-400 capitalize text-xs">
-                                  {k}:
-                                </span>
-                                <span className="text-xs">{String(v)}</span>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      ) : (
-                        <span>{String(value)}</span>
-                      )}
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-300">
+                        {typeof value === "boolean" ? (
+                          <span
+                            className={
+                              value ? "text-green-400" : "text-red-400"
+                            }
+                          >
+                            {value ? "Enabled" : "Disabled"}
+                          </span>
+                        ) : typeof value === "object" && value !== null ? (
+                          <div className="space-y-1">
+                            {Object.entries(value as Record<string, any>).map(
+                              ([k, v]) => (
+                                <div key={k} className="flex gap-2">
+                                  <span className="text-gray-400 capitalize text-xs">
+                                    {k}:
+                                  </span>
+                                  <span className="text-xs">{String(v)}</span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        ) : (
+                          <span>{String(value)}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )
+                  );
+                }
               )}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ML Models Configuration */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <Brain className="w-5 h-5 text-blue-400" />
+          ML Models Configuration
+        </h3>
+        <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4 space-y-3">
+          {!bot.enabled_ml_models || bot.enabled_ml_models.length === 0 ? (
+            <p className="text-gray-400 text-xs sm:text-sm">
+              No ML models enabled
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {(bot.enabled_ml_models || []).map((modelId) => {
+                const model = mlModelMap.get(modelId);
+                const enabledModels = bot.enabled_ml_models || [];
+                const weight =
+                  bot.ml_model_weights?.[modelId] ||
+                  (enabledModels.length > 0 ? 1 / enabledModels.length : 0);
+                return (
+                  <div
+                    key={modelId}
+                    className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-3 border-b border-gray-600 last:border-0"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-4 h-4 text-blue-400" />
+                        <span className="text-xs sm:text-sm font-medium text-blue-400">
+                          {model?.name || modelId}
+                        </span>
+                      </div>
+                      {model && (
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <div>
+                            <span className="text-gray-500">Type: </span>
+                            <span className="capitalize">
+                              {model.model_type}
+                            </span>
+                          </div>
+                          {model.description && (
+                            <div className="text-gray-400">
+                              {model.description}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs sm:text-sm text-gray-400">
+                        Weight:
+                      </span>
+                      <span className="text-xs sm:text-sm font-semibold text-white">
+                        {(weight * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Social Media & News Analysis */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+        <div>
+          <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-green-400" />
+            Social Media Analysis
+          </h3>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+              <span className="text-xs sm:text-sm text-gray-400">Status</span>
+              <span
+                className={`text-xs sm:text-sm font-semibold ${
+                  bot.enable_social_analysis
+                    ? "text-green-400"
+                    : "text-gray-500"
+                }`}
+              >
+                {bot.enable_social_analysis ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+            {bot.enable_social_analysis && bot.signal_weights?.social && (
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-2 mt-2 pt-2 border-t border-gray-600">
+                <span className="text-xs sm:text-sm text-gray-400">
+                  Signal Weight
+                </span>
+                <span className="text-xs sm:text-sm font-semibold text-white">
+                  {(bot.signal_weights.social * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+            <Newspaper className="w-5 h-5 text-orange-400" />
+            News Analysis
+          </h3>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+              <span className="text-xs sm:text-sm text-gray-400">Status</span>
+              <span
+                className={`text-xs sm:text-sm font-semibold ${
+                  bot.enable_news_analysis ? "text-green-400" : "text-gray-500"
+                }`}
+              >
+                {bot.enable_news_analysis ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+            {bot.enable_news_analysis && bot.signal_weights?.news && (
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-2 mt-2 pt-2 border-t border-gray-600">
+                <span className="text-xs sm:text-sm text-gray-400">
+                  Signal Weight
+                </span>
+                <span className="text-xs sm:text-sm font-semibold text-white">
+                  {(bot.signal_weights.news * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Signal Aggregation Configuration */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <GitMerge className="w-5 h-5 text-purple-400" />
+          Signal Aggregation
+        </h3>
+        <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-3 border-b border-gray-600">
+            <span className="text-xs sm:text-sm text-gray-400">
+              Aggregation Method
+            </span>
+            <span className="text-xs sm:text-sm font-semibold text-white capitalize">
+              {bot.signal_aggregation_method
+                ? AGGREGATION_METHODS.find(
+                    (m) => m.id === bot.signal_aggregation_method
+                  )?.name || bot.signal_aggregation_method
+                : "Not set"}
+            </span>
+          </div>
+
+          {bot.signal_weights && Object.keys(bot.signal_weights).length > 0 && (
+            <div>
+              <h4 className="text-xs sm:text-sm font-medium text-gray-300 mb-2">
+                Signal Weights
+              </h4>
+              <div className="space-y-2">
+                {Object.entries(bot.signal_weights).map(([key, weight]) => {
+                  const sourceInfo =
+                    SIGNAL_SOURCE_WEIGHTS[
+                      key as keyof typeof SIGNAL_SOURCE_WEIGHTS
+                    ];
+                  if (!sourceInfo) return null;
+                  const Icon = sourceInfo.icon;
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4 text-gray-400" />
+                        <span className="text-xs sm:text-sm text-gray-300">
+                          {sourceInfo.name}
+                        </span>
+                      </div>
+                      <span className="text-xs sm:text-sm font-semibold text-white">
+                        {(Number(weight) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {bot.signal_thresholds &&
+            Object.keys(bot.signal_thresholds).length > 0 && (
+              <div>
+                <h4 className="text-xs sm:text-sm font-medium text-gray-300 mb-2">
+                  Signal Thresholds
+                </h4>
+                <div className="space-y-1">
+                  {Object.entries(bot.signal_thresholds).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex justify-between gap-2 text-xs sm:text-sm"
+                    >
+                      <span className="text-gray-400 capitalize">{key}</span>
+                      <span className="text-gray-300">{String(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+        </div>
+      </div>
+
+      {/* Enhanced Risk Management */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <Shield className="w-5 h-5 text-yellow-400" />
+          Enhanced Risk Management
+        </h3>
+        <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4 space-y-3">
+          {bot.risk_score_threshold && (
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-2 border-b border-gray-600">
+              <span className="text-xs sm:text-sm text-gray-400">
+                Risk Score Threshold
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-white">
+                {bot.risk_score_threshold}
+              </span>
+            </div>
+          )}
+          {bot.risk_adjustment_factor && (
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-2 border-b border-gray-600">
+              <span className="text-xs sm:text-sm text-gray-400">
+                Risk Adjustment Factor
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-white">
+                {bot.risk_adjustment_factor}
+              </span>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+            <span className="text-xs sm:text-sm text-gray-400">
+              Risk-Based Position Scaling
+            </span>
+            <span
+              className={`text-xs sm:text-sm font-semibold ${
+                bot.risk_based_position_scaling
+                  ? "text-green-400"
+                  : "text-gray-500"
+              }`}
+            >
+              {bot.risk_based_position_scaling ? "Enabled" : "Disabled"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -747,7 +1202,8 @@ const BotOverviewTab: React.FC<{
 const BotExecutionsTab: React.FC<{
   executions: TradingBotExecution[];
   onRefresh: () => void;
-}> = ({ executions, onRefresh }) => {
+  navigate: (path: string) => void;
+}> = ({ executions, onRefresh, navigate }) => {
   const getActionIcon = (action: string) => {
     switch (action) {
       case "buy":
@@ -788,28 +1244,43 @@ const BotExecutionsTab: React.FC<{
               key={execution.id}
               className="bg-gray-700/50 rounded-lg p-3 sm:p-4 border border-gray-600"
             >
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-0 mb-2">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  {getActionIcon(execution.action)}
-                  <div>
-                    <h4 className="text-white font-medium text-sm sm:text-base">
-                      {execution.stock_symbol}
-                    </h4>
-                    <p className="text-xs sm:text-sm text-gray-400 capitalize">
-                      {execution.action}
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex-1 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-0">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    {getActionIcon(execution.action)}
+                    <div>
+                      <h4 className="text-white font-medium text-sm sm:text-base">
+                        {execution.stock_symbol}
+                      </h4>
+                      <p className="text-xs sm:text-sm text-gray-400 capitalize">
+                        {execution.action}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-xs sm:text-sm text-gray-400">
+                      {new Date(execution.timestamp).toLocaleString()}
                     </p>
+                    {execution.risk_score && (
+                      <p className="text-xs text-gray-500">
+                        Risk: {execution.risk_score}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="text-left sm:text-right">
-                  <p className="text-xs sm:text-sm text-gray-400">
-                    {new Date(execution.timestamp).toLocaleString()}
-                  </p>
-                  {execution.risk_score && (
-                    <p className="text-xs text-gray-500">
-                      Risk: {execution.risk_score}
-                    </p>
-                  )}
-                </div>
+                <button
+                  onClick={() =>
+                    window.open(
+                      `/executions/${execution.id}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    )
+                  }
+                  className="p-2 hover:bg-gray-600 rounded-lg transition-colors"
+                  title="View detailed timeline"
+                >
+                  <Maximize className="w-4 h-4 text-gray-400 hover:text-white" />
+                </button>
               </div>
               <p className="text-xs sm:text-sm text-gray-300 mb-2 break-words">
                 {execution.reason}
@@ -819,6 +1290,142 @@ const BotExecutionsTab: React.FC<{
                   <CheckCircle className="w-3 h-3" />
                   Order executed
                 </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Bot Orders Tab
+const BotOrdersTab: React.FC<{
+  orders: Order[];
+  isLoading: boolean;
+  onRefresh: () => void;
+}> = ({ orders, isLoading, onRefresh }) => {
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(price);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8 sm:py-12">
+        <RefreshCw className="w-10 h-10 sm:w-12 sm:h-12 text-gray-500 mx-auto mb-3 sm:mb-4 animate-spin" />
+        <p className="text-sm sm:text-base text-gray-400">Loading orders...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
+        <h3 className="text-base sm:text-lg font-semibold text-white">
+          Bot Orders ({orders.length})
+        </h3>
+        <button
+          onClick={onRefresh}
+          className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-xs sm:text-sm flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+      </div>
+
+      {!orders || orders.length === 0 ? (
+        <div className="text-center py-8 sm:py-12 bg-gray-700/50 rounded-lg">
+          <FileText className="w-10 h-10 sm:w-12 sm:h-12 text-gray-500 mx-auto mb-3 sm:mb-4" />
+          <p className="text-gray-400 text-sm sm:text-base">No orders yet</p>
+        </div>
+      ) : (
+        <div className="space-y-2 sm:space-y-3">
+          {orders.map((order) => (
+            <div
+              key={order.id}
+              className="bg-gray-700/50 rounded-lg p-3 sm:p-4 border border-gray-600"
+            >
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-0 mb-2">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {order.transaction_type === "buy" ? (
+                    <TrendingUp className="w-5 h-5 text-green-400" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-red-400" />
+                  )}
+                  <div>
+                    <h4 className="text-white font-medium text-sm sm:text-base">
+                      {order.stock_symbol}
+                    </h4>
+                    <p className="text-xs sm:text-sm text-gray-400 capitalize">
+                      {order.transaction_type} • {order.order_type} •{" "}
+                      {order.status}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="text-xs sm:text-sm text-gray-400">
+                    {formatDate(order.created_at)}
+                  </p>
+                  {order.executed_at && (
+                    <p className="text-xs text-gray-500">
+                      Executed: {formatDate(order.executed_at)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mt-3">
+                <div>
+                  <p className="text-xs text-gray-400">Quantity</p>
+                  <p className="text-sm sm:text-base text-white font-medium">
+                    {order.quantity}
+                  </p>
+                </div>
+                {order.executed_price && (
+                  <div>
+                    <p className="text-xs text-gray-400">Executed Price</p>
+                    <p className="text-sm sm:text-base text-white font-medium">
+                      {formatPrice(order.executed_price)}
+                    </p>
+                  </div>
+                )}
+                {order.target_price && (
+                  <div>
+                    <p className="text-xs text-gray-400">Target Price</p>
+                    <p className="text-sm sm:text-base text-white font-medium">
+                      {formatPrice(order.target_price)}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-gray-400">Status</p>
+                  <span
+                    className={`text-xs sm:text-sm font-medium ${
+                      order.status === "done"
+                        ? "text-green-400"
+                        : order.status === "waiting"
+                        ? "text-yellow-400"
+                        : order.status === "cancelled"
+                        ? "text-red-400"
+                        : "text-gray-400"
+                    }`}
+                  >
+                    {order.status}
+                  </span>
+                </div>
+              </div>
+              {order.notes && (
+                <p className="text-xs sm:text-sm text-gray-300 mt-2 break-words">
+                  {order.notes}
+                </p>
               )}
             </div>
           ))}

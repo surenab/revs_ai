@@ -75,5 +75,55 @@ urlpatterns = [
         views.TradingBotExecutionListView.as_view(),
         name="bot-executions",
     ),
+    path(
+        "executions/<uuid:pk>/",
+        views.TradingBotExecutionDetailView.as_view(),
+        name="execution-detail",
+    ),
+    path(
+        "bots/<uuid:bot_id>/orders/",
+        views.TradingBotOrdersListView.as_view(),
+        name="bot-orders",
+    ),
     path("bots/<uuid:pk>/performance/", views.bot_performance, name="bot-performance"),
+    # ML Model endpoints
+    path("ml-models/", views.MLModelViewSet.as_view(), name="ml-model-list"),
+    path(
+        "ml-models/<uuid:pk>/",
+        views.MLModelDetailView.as_view(),
+        name="ml-model-detail",
+    ),
+    path(
+        "ml-models/<uuid:model_id>/predict/",
+        views.MLModelPredictionView.as_view(),
+        name="ml-model-predict",
+    ),
+    # Signal history endpoints
+    path(
+        "signal-history/",
+        views.BotSignalHistoryViewSet.as_view(),
+        name="signal-history-list",
+    ),
+    path(
+        "signal-history/<uuid:pk>/",
+        views.BotSignalHistoryDetailView.as_view(),
+        name="signal-history-detail",
+    ),
+    path(
+        "bots/<uuid:bot_id>/signal-analytics/",
+        views.BotSignalAnalyticsView.as_view(),
+        name="bot-signal-analytics",
+    ),
+    # Bot configuration templates
+    path(
+        "bot-templates/",
+        views.BotConfigurationTemplatesView.as_view(),
+        name="bot-templates",
+    ),
+    # Default indicator thresholds
+    path(
+        "default-indicator-thresholds/",
+        views.DefaultIndicatorThresholdsView.as_view(),
+        name="default-indicator-thresholds",
+    ),
 ]

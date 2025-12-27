@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -8,12 +8,43 @@ import {
   TrendingDown,
   Minus,
 } from "lucide-react";
-import { AVAILABLE_CHART_PATTERNS } from "../utils/indicatorsConfig";
-import type { ChartPattern } from "../utils/indicatorsConfig";
+import { PATTERNS } from "../lib/botConstants";
+import type { PatternDefinition } from "../lib/botConstants";
 
 const Patterns: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSignal, setSelectedSignal] = useState<string | null>(null);
+
+  // Helper to determine signal from pattern
+  const getPatternSignal = (
+    pattern: PatternDefinition
+  ): "bullish" | "bearish" | "neutral" => {
+    // Bearish patterns
+    if (
+      pattern.id === "advance_block" ||
+      pattern.id === "head_and_shoulders" ||
+      pattern.id === "double_top" ||
+      pattern.id === "rising_wedge"
+    ) {
+      return "bearish";
+    }
+    // Neutral patterns
+    if (pattern.id === "tri_star" || pattern.id === "spinning_top") {
+      return "neutral";
+    }
+    // Default to bullish for reversal/continuation patterns
+    return "bullish";
+  };
+
+  // Helper to get color from pattern
+  const getPatternColor = (pattern: PatternDefinition): string => {
+    const signal = getPatternSignal(pattern);
+    return signal === "bullish"
+      ? "#10B981"
+      : signal === "bearish"
+      ? "#EF4444"
+      : "#F59E0B";
+  };
 
   const signalLabels: Record<string, string> = {
     bullish: "Bullish Patterns",
@@ -27,29 +58,37 @@ const Patterns: React.FC = () => {
     neutral: <Minus className="w-5 h-5" />,
   };
 
-  const filteredPatterns = AVAILABLE_CHART_PATTERNS.filter((pattern) => {
-    const matchesSearch =
-      pattern.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pattern.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pattern.analysis?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredPatterns = useMemo(() => {
+    return PATTERNS.filter((pattern) => {
+      const matchesSearch =
+        pattern.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pattern.description
+          ?.toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        pattern.formation?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesSignal =
-      selectedSignal === null || pattern.signal === selectedSignal;
+      const patternSignal = getPatternSignal(pattern);
+      const matchesSignal =
+        selectedSignal === null || patternSignal === selectedSignal;
 
-    return matchesSearch && matchesSignal;
-  });
+      return matchesSearch && matchesSignal;
+    });
+  }, [searchQuery, selectedSignal]);
 
-  const groupedPatterns = filteredPatterns.reduce((acc, pattern) => {
-    if (!acc[pattern.signal]) {
-      acc[pattern.signal] = [];
-    }
-    acc[pattern.signal].push(pattern);
-    return acc;
-  }, {} as Record<string, ChartPattern[]>);
+  const groupedPatterns = useMemo(() => {
+    return filteredPatterns.reduce((acc, pattern) => {
+      const signal = getPatternSignal(pattern);
+      if (!acc[signal]) {
+        acc[signal] = [];
+      }
+      acc[signal].push(pattern);
+      return acc;
+    }, {} as Record<string, PatternDefinition[]>);
+  }, [filteredPatterns]);
 
-  const signals = Array.from(
-    new Set(AVAILABLE_CHART_PATTERNS.map((p) => p.signal))
-  );
+  const signals = useMemo(() => {
+    return Array.from(new Set(PATTERNS.map((p) => getPatternSignal(p))));
+  }, []);
 
   const getSignalColor = (signal: string) => {
     switch (signal) {
@@ -182,36 +221,47 @@ const Patterns: React.FC = () => {
                       >
                         <div
                           className={`bg-gray-800/50 backdrop-blur-md border rounded-xl p-6 h-full hover:border-white/20 transition-all cursor-pointer ${getSignalColor(
-                            pattern.signal
+                            getPatternSignal(pattern)
                           )}`}
                         >
                           <div className="flex items-start gap-4 mb-3">
                             <div
                               className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                               style={{
-                                backgroundColor: `${pattern.color}20`,
+                                backgroundColor: `${getPatternColor(
+                                  pattern
+                                )}20`,
+                                color: getPatternColor(pattern),
                               }}
                             >
-                              <Sparkles
-                                className="w-5 h-5"
-                                style={{ color: pattern.color }}
-                              />
+                              <pattern.icon className="w-5 h-5" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <h3 className="text-lg font-semibold text-white mb-1 group-hover:text-purple-400 transition-colors">
                                 {pattern.name}
                               </h3>
-                              <span
-                                className={`text-xs px-2 py-1 rounded ${
-                                  pattern.signal === "bullish"
-                                    ? "bg-green-500/20 text-green-400"
-                                    : pattern.signal === "bearish"
-                                    ? "bg-red-500/20 text-red-400"
-                                    : "bg-yellow-500/20 text-yellow-400"
-                                }`}
-                              >
-                                {pattern.signal}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-xs px-2 py-1 rounded ${
+                                    getPatternSignal(pattern) === "bullish"
+                                      ? "bg-green-500/20 text-green-400"
+                                      : getPatternSignal(pattern) === "bearish"
+                                      ? "bg-red-500/20 text-red-400"
+                                      : "bg-yellow-500/20 text-yellow-400"
+                                  }`}
+                                >
+                                  {getPatternSignal(pattern)}
+                                </span>
+                                <span
+                                  className={`text-xs px-2 py-1 rounded ${
+                                    pattern.patternType === "reversal"
+                                      ? "bg-red-900/30 text-red-300"
+                                      : "bg-green-900/30 text-green-300"
+                                  }`}
+                                >
+                                  {pattern.patternType}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
@@ -221,13 +271,13 @@ const Patterns: React.FC = () => {
                             </p>
                           )}
 
-                          {pattern.analysis && (
+                          {pattern.formation && (
                             <div className="pt-3 border-t border-white/10">
                               <p className="text-white/60 text-xs font-semibold mb-1">
-                                Quick Tip:
+                                Formation:
                               </p>
                               <p className="text-white/70 text-xs leading-relaxed line-clamp-2">
-                                {pattern.analysis.split(".")[0]}.
+                                {pattern.formation.split(".")[0]}.
                               </p>
                             </div>
                           )}
@@ -258,14 +308,14 @@ const Patterns: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
             <div>
               <div className="text-3xl font-bold text-white mb-1">
-                {AVAILABLE_CHART_PATTERNS.length}
+                {PATTERNS.length}
               </div>
               <div className="text-white/60 text-sm">Total Patterns</div>
             </div>
             <div>
               <div className="text-3xl font-bold text-white mb-1">
                 {
-                  AVAILABLE_CHART_PATTERNS.filter((p) => p.signal === "bullish")
+                  PATTERNS.filter((p) => getPatternSignal(p) === "bullish")
                     .length
                 }
               </div>
@@ -274,7 +324,7 @@ const Patterns: React.FC = () => {
             <div>
               <div className="text-3xl font-bold text-white mb-1">
                 {
-                  AVAILABLE_CHART_PATTERNS.filter((p) => p.signal === "bearish")
+                  PATTERNS.filter((p) => getPatternSignal(p) === "bearish")
                     .length
                 }
               </div>
@@ -283,7 +333,7 @@ const Patterns: React.FC = () => {
             <div>
               <div className="text-3xl font-bold text-white mb-1">
                 {
-                  AVAILABLE_CHART_PATTERNS.filter((p) => p.signal === "neutral")
+                  PATTERNS.filter((p) => getPatternSignal(p) === "neutral")
                     .length
                 }
               </div>

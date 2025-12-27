@@ -11,6 +11,7 @@ from .models import (
     StockTick,
     TradingBotConfig,
     TradingBotExecution,
+    TradingBotSettings,
     UserWatchlist,
 )
 
@@ -632,6 +633,7 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "enabled_indicators",
+                    "indicator_thresholds",
                     "enabled_patterns",
                     "buy_rules",
                     "sell_rules",
@@ -802,3 +804,56 @@ class TradingBotExecutionAdmin(admin.ModelAdmin):
 
     has_order.short_description = "Order Created"
     has_order.admin_order_field = "executed_order"
+
+
+@admin.register(TradingBotSettings)
+class TradingBotSettingsAdmin(admin.ModelAdmin):
+    """
+    Admin interface for Trading Bot Settings (singleton).
+    """
+
+    def has_add_permission(self, request):
+        # Only allow one instance
+        return not TradingBotSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        # Prevent deletion
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        # Always redirect to the singleton instance (create if doesn't exist)
+        from django.shortcuts import redirect
+        from django.urls import reverse
+
+        obj = TradingBotSettings.load()  # This will create if doesn't exist
+        # Use the object's ID directly (should be 1 for singleton)
+        return redirect(
+            reverse(
+                "admin:stocks_tradingbotsettings_change",
+                args=[obj.id],
+            )
+        )
+
+    fieldsets = (
+        (
+            "Default Indicator Thresholds",
+            {
+                "fields": ("default_indicator_thresholds",),
+                "description": (
+                    "Configure default threshold values for all technical indicators. "
+                    "These values are used when bot configurations don't specify custom thresholds. "
+                    "Format: JSON object with indicator types as keys and threshold dictionaries as values. "
+                    'Example: {"rsi": {"oversold": 30.0, "overbought": 70.0}}'
+                ),
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": ("created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    readonly_fields = ["created_at", "updated_at"]

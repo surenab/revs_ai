@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from .models import SupportRequest, User, UserProfile
+from .models import Notification, SupportRequest, User, UserProfile
 
 
 @admin.register(User)
@@ -124,6 +124,13 @@ class UserProfileInline(admin.StackedInline):
 
     fieldsets = (
         (
+            _("Financial Information"),
+            {
+                "fields": ("cash",),
+                "description": _("Cash balance available for trading"),
+            },
+        ),
+        (
             _("Professional Information"),
             {"fields": ("company", "job_title", "website")},
         ),
@@ -158,8 +165,10 @@ class UserProfileAdmin(admin.ModelAdmin):
         "user",
         "company",
         "job_title",
+        "cash",
         "timezone",
         "profile_visibility",
+        "receive_notifications",
         "created_at",
     )
 
@@ -169,6 +178,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         "receive_marketing_emails",
         "timezone",
         "language",
+        "created_at",
     )
 
     search_fields = (
@@ -183,6 +193,13 @@ class UserProfileAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (_("User"), {"fields": ("user",)}),
+        (
+            _("Financial Information"),
+            {
+                "fields": ("cash",),
+                "description": _("Cash balance available for trading"),
+            },
+        ),
         (
             _("Professional Information"),
             {"fields": ("company", "job_title", "website")},
@@ -291,3 +308,98 @@ class SupportRequestAdmin(admin.ModelAdmin):
         self.message_user(request, f"{count} support request(s) marked as closed.")
 
     mark_as_closed.short_description = _("Mark selected requests as closed")
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    """Admin for Notification model."""
+
+    list_display = (
+        "title",
+        "user",
+        "type",
+        "is_read",
+        "related_object_type",
+        "created_at",
+        "read_at",
+    )
+
+    list_filter = (
+        "type",
+        "is_read",
+        "related_object_type",
+        "created_at",
+        "read_at",
+    )
+
+    search_fields = (
+        "title",
+        "message",
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "related_object_type",
+    )
+
+    readonly_fields = ("id", "created_at", "read_at")
+
+    fieldsets = (
+        (
+            _("Notification Information"),
+            {
+                "fields": (
+                    "id",
+                    "user",
+                    "type",
+                    "title",
+                    "message",
+                    "is_read",
+                )
+            },
+        ),
+        (
+            _("Related Object"),
+            {
+                "fields": (
+                    "related_object_type",
+                    "related_object_id",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Metadata"),
+            {
+                "fields": ("metadata",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Timestamps"),
+            {
+                "fields": ("created_at", "read_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    actions = ["mark_as_read", "mark_as_unread"]
+
+    def mark_as_read(self, request, queryset):
+        """Mark selected notifications as read."""
+
+        count = 0
+        for notification in queryset:
+            if not notification.is_read:
+                notification.mark_as_read()
+                count += 1
+        self.message_user(request, f"{count} notification(s) marked as read.")
+
+    mark_as_read.short_description = _("Mark selected notifications as read")
+
+    def mark_as_unread(self, request, queryset):
+        """Mark selected notifications as unread."""
+        count = queryset.update(is_read=False, read_at=None)
+        self.message_user(request, f"{count} notification(s) marked as unread.")
+
+    mark_as_unread.short_description = _("Mark selected notifications as unread")
