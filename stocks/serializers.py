@@ -348,7 +348,26 @@ class StockTimeSeriesSerializer(serializers.Serializer):
     )
     start_date = serializers.DateField(required=False, allow_null=True)
     end_date = serializers.DateField(required=False, allow_null=True)
-    limit = serializers.IntegerField(min_value=1, max_value=10000, default=100)
+    # Allow -1 or 0 to mean "no limit" (all data), or any positive integer
+    limit = serializers.IntegerField(min_value=-1, default=100)
+
+    def validate_limit(self, value):
+        """Validate limit value."""
+        # -1 or 0 means no limit (return all data)
+        if value in {-1, 0}:
+            return None  # Return None to indicate no limit
+        # Large values (>= 100000) are treated as "all data" for backward compatibility
+        # This handles the case when frontend sends 100000 for MAX period
+        if value >= 100000:
+            return None  # Return None to indicate no limit
+        # For smaller positive values, enforce a reasonable max to prevent abuse
+        if value > 1000000:  # 1 million max for safety (shouldn't reach here)
+            raise serializers.ValidationError(
+                _(
+                    "Limit cannot exceed 1,000,000. Use -1, 0, or >= 100000 for all data."
+                )
+            )
+        return value
 
     def validate_symbol(self, value):
         """Validate that the stock symbol exists."""
@@ -910,6 +929,7 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             "risk_per_trade",
             "stop_loss_percent",
             "take_profit_percent",
+            "period_days",
             "enabled_indicators",
             "indicator_thresholds",
             "enabled_patterns",

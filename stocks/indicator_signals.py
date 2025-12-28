@@ -177,6 +177,147 @@ def get_indicator_thresholds(bot_config, indicator_type: str) -> dict[str, float
     return default_thresholds.get(indicator_type, {})
 
 
+def _calculate_indicator_predictions(
+    indicator_type: str,
+    action: str,
+    strength: float,
+    confidence: float,
+    value: float | None = None,
+) -> dict[str, Any]:
+    """
+    Calculate predictions (gain/loss, probabilities, timeframes, scenarios) for indicators.
+
+    Args:
+        indicator_type: Type of indicator (e.g., 'rsi', 'macd')
+        action: Signal action ('buy', 'sell', 'hold')
+        strength: Signal strength (0-1)
+        confidence: Signal confidence (0-1)
+        value: Indicator value (optional)
+
+    Returns:
+        Dictionary with prediction fields
+    """
+    predictions: dict[str, Any] = {}
+
+    # Define indicator-specific prediction parameters
+    indicator_params: dict[str, dict[str, Any]] = {
+        "rsi": {
+            "buy_gain": (3.0, 8.0),  # (min, max) percentage
+            "buy_loss": (1.0, 3.0),
+            "sell_gain": (2.0, 6.0),
+            "sell_loss": (1.0, 4.0),
+            "timeframe": ("1d", "5d", "3d"),  # (min, max, expected)
+            "success_rate": 0.65,  # Historical success rate
+        },
+        "macd": {
+            "buy_gain": (5.0, 12.0),
+            "buy_loss": (2.0, 5.0),
+            "sell_gain": (4.0, 10.0),
+            "sell_loss": (2.0, 6.0),
+            "timeframe": ("3d", "10d", "7d"),
+            "success_rate": 0.60,
+        },
+        "adx": {
+            "buy_gain": (4.0, 10.0),
+            "buy_loss": (1.5, 4.0),
+            "sell_gain": (3.0, 8.0),
+            "sell_loss": (1.5, 5.0),
+            "timeframe": ("5d", "15d", "10d"),
+            "success_rate": 0.58,
+        },
+        "stochastic": {
+            "buy_gain": (3.0, 8.0),
+            "buy_loss": (1.0, 3.0),
+            "sell_gain": (2.0, 6.0),
+            "sell_loss": (1.0, 4.0),
+            "timeframe": ("1d", "5d", "3d"),
+            "success_rate": 0.63,
+        },
+        "mfi": {
+            "buy_gain": (3.0, 8.0),
+            "buy_loss": (1.0, 3.0),
+            "sell_gain": (2.0, 6.0),
+            "sell_loss": (1.0, 4.0),
+            "timeframe": ("1d", "5d", "3d"),
+            "success_rate": 0.62,
+        },
+    }
+
+    # Get parameters for this indicator (default if not found)
+    params = indicator_params.get(
+        indicator_type,
+        {
+            "buy_gain": (2.0, 6.0),
+            "buy_loss": (1.0, 3.0),
+            "sell_gain": (2.0, 5.0),
+            "sell_loss": (1.0, 4.0),
+            "timeframe": ("2d", "7d", "4d"),
+            "success_rate": 0.55,
+        },
+    )
+
+    if action in ["buy", "sell"]:
+        # Calculate possible gain/loss based on strength and confidence
+        gain_range = params["buy_gain"] if action == "buy" else params["sell_gain"]
+        loss_range = params["buy_loss"] if action == "buy" else params["sell_loss"]
+
+        # Scale by strength and confidence
+        gain_multiplier = strength * confidence
+        loss_multiplier = (1.0 - strength) * confidence
+
+        possible_gain = (
+            gain_range[0] + (gain_range[1] - gain_range[0]) * gain_multiplier
+        )
+        possible_loss = (
+            loss_range[0] + (loss_range[1] - loss_range[0]) * loss_multiplier
+        )
+
+        predictions["possible_gain"] = round(possible_gain, 2)
+        predictions["possible_loss"] = round(possible_loss, 2)
+
+        # Calculate probabilities based on success rate and signal strength
+        base_probability = params["success_rate"]
+        gain_probability = base_probability * strength * confidence
+        loss_probability = (1.0 - base_probability) * (1.0 - strength) * confidence
+
+        predictions["gain_probability"] = round(min(0.95, gain_probability), 4)
+        predictions["loss_probability"] = round(min(0.95, loss_probability), 4)
+
+        # Timeframe prediction
+        tf_min, tf_max, tf_expected = params["timeframe"]
+        predictions["timeframe_prediction"] = {
+            "min_timeframe": tf_min,
+            "max_timeframe": tf_max,
+            "expected_timeframe": tf_expected,
+            "timeframe_confidence": round(confidence * strength, 4),
+        }
+
+        # Scenario analysis
+        best_gain = gain_range[1] * strength
+        base_gain = possible_gain
+        worst_loss = -loss_range[1] * (1.0 - strength)
+
+        predictions["consequences"] = {
+            "best_case": {
+                "gain": round(best_gain, 2),
+                "probability": round(gain_probability * 0.8, 4),
+                "timeframe": tf_min,
+            },
+            "base_case": {
+                "gain": round(base_gain, 2),
+                "probability": round(gain_probability, 4),
+                "timeframe": tf_expected,
+            },
+            "worst_case": {
+                "loss": round(abs(worst_loss), 2),
+                "probability": round(loss_probability, 4),
+                "timeframe": tf_max,
+            },
+        }
+
+    return predictions
+
+
 def convert_rsi_to_signal(
     rsi_value: float | None, thresholds: dict[str, float]
 ) -> dict[str, Any] | None:
@@ -187,24 +328,36 @@ def convert_rsi_to_signal(
     oversold = thresholds.get("oversold", 30.0)
     overbought = thresholds.get("overbought", 70.0)
 
-    if rsi_value < oversold:
+    if rsi_value < oversold and oversold > 0:
         strength = min(1.0, (oversold - rsi_value) / oversold)
-        return {
+        signal = {
             "action": "buy",
             "confidence": 0.7,
             "strength": strength,
             "value": rsi_value,
             "reason": f"RSI {rsi_value:.2f} is oversold (< {oversold})",
         }
-    if rsi_value > overbought:
+        # Add predictions
+        predictions = _calculate_indicator_predictions(
+            "rsi", "buy", strength, 0.7, rsi_value
+        )
+        signal.update(predictions)
+        return signal
+    if rsi_value > overbought and overbought < 100:
         strength = min(1.0, (rsi_value - overbought) / (100 - overbought))
-        return {
+        signal = {
             "action": "sell",
             "confidence": 0.7,
             "strength": strength,
             "value": rsi_value,
             "reason": f"RSI {rsi_value:.2f} is overbought (> {overbought})",
         }
+        # Add predictions
+        predictions = _calculate_indicator_predictions(
+            "rsi", "sell", strength, 0.7, rsi_value
+        )
+        signal.update(predictions)
+        return signal
 
     # Neutral zone - return hold signal
     neutral_low = thresholds.get("neutral_low", 40.0)
@@ -236,22 +389,32 @@ def convert_macd_to_signal(  # noqa: PLR0911
     if signal_value is not None:
         if macd_value > signal_value and macd_value > neutral_threshold:
             strength = min(1.0, abs(macd_value) / 10.0) if abs(macd_value) < 10 else 1.0
-            return {
+            signal = {
                 "action": "buy",
                 "confidence": 0.65,
                 "strength": strength,
                 "value": macd_value,
                 "reason": f"MACD {macd_value:.2f} above signal line and positive",
             }
+            predictions = _calculate_indicator_predictions(
+                "macd", "buy", strength, 0.65, macd_value
+            )
+            signal.update(predictions)
+            return signal
         if macd_value < signal_value and macd_value < -neutral_threshold:
             strength = min(1.0, abs(macd_value) / 10.0) if abs(macd_value) < 10 else 1.0
-            return {
+            signal = {
                 "action": "sell",
                 "confidence": 0.65,
                 "strength": strength,
                 "value": macd_value,
                 "reason": f"MACD {macd_value:.2f} below signal line and negative",
             }
+            predictions = _calculate_indicator_predictions(
+                "macd", "sell", strength, 0.65, macd_value
+            )
+            signal.update(predictions)
+            return signal
         # MACD is between signal lines or near zero
         if abs(macd_value) <= neutral_threshold or (
             signal_value is not None
@@ -267,22 +430,32 @@ def convert_macd_to_signal(  # noqa: PLR0911
     # Just check if MACD is positive or negative (no signal line)
     if macd_value > neutral_threshold:
         strength = min(1.0, abs(macd_value) / 10.0) if abs(macd_value) < 10 else 1.0
-        return {
+        signal = {
             "action": "buy",
             "confidence": 0.6,
             "strength": strength,
             "value": macd_value,
             "reason": f"MACD {macd_value:.2f} is positive (bullish)",
         }
+        predictions = _calculate_indicator_predictions(
+            "macd", "buy", strength, 0.6, macd_value
+        )
+        signal.update(predictions)
+        return signal
     if macd_value < -neutral_threshold:
         strength = min(1.0, abs(macd_value) / 10.0) if abs(macd_value) < 10 else 1.0
-        return {
+        signal = {
             "action": "sell",
             "confidence": 0.6,
             "strength": strength,
             "value": macd_value,
             "reason": f"MACD {macd_value:.2f} is negative (bearish)",
         }
+        predictions = _calculate_indicator_predictions(
+            "macd", "sell", strength, 0.6, macd_value
+        )
+        signal.update(predictions)
+        return signal
 
     # MACD is near zero - hold
     return {
@@ -421,7 +594,7 @@ def convert_stochastic_to_signal(
     oversold = thresholds.get("oversold", 20.0)
     overbought = thresholds.get("overbought", 80.0)
 
-    if k_value < oversold:
+    if k_value < oversold and oversold > 0:
         strength = min(1.0, (oversold - k_value) / oversold)
         return {
             "action": "buy",
@@ -430,7 +603,7 @@ def convert_stochastic_to_signal(
             "value": k_value,
             "reason": f"Stochastic %K {k_value:.2f} is oversold (< {oversold})",
         }
-    if k_value > overbought:
+    if k_value > overbought and overbought < 100:
         strength = min(1.0, (k_value - overbought) / (100 - overbought))
         return {
             "action": "sell",
@@ -460,7 +633,7 @@ def convert_mfi_to_signal(
     oversold = thresholds.get("oversold", 20.0)
     overbought = thresholds.get("overbought", 80.0)
 
-    if mfi_value < oversold:
+    if mfi_value < oversold and oversold > 0:
         strength = min(1.0, (oversold - mfi_value) / oversold)
         return {
             "action": "buy",
@@ -469,7 +642,7 @@ def convert_mfi_to_signal(
             "value": mfi_value,
             "reason": f"MFI {mfi_value:.2f} is oversold (< {oversold})",
         }
-    if mfi_value > overbought:
+    if mfi_value > overbought and overbought < 100:
         strength = min(1.0, (mfi_value - overbought) / (100 - overbought))
         return {
             "action": "sell",
@@ -508,6 +681,7 @@ def convert_moving_average_to_signal(
         if (
             current_price > ma_value
             and prev_price <= prev_ma
+            and ma_value > 0
             and abs(current_price - ma_value) / ma_value >= crossover_threshold
         ):
             return {
@@ -521,6 +695,7 @@ def convert_moving_average_to_signal(
         if (
             current_price < ma_value
             and prev_price >= prev_ma
+            and ma_value > 0
             and abs(ma_value - current_price) / ma_value >= crossover_threshold
         ):
             return {
@@ -539,7 +714,10 @@ def convert_moving_average_to_signal(
     near_threshold = crossover_threshold
 
     # Check if price is significantly above MA (with tolerance)
-    price_diff_above = (current_price - ma_value * price_above_mult) / ma_value
+    if ma_value > 0:
+        price_diff_above = (current_price - ma_value * price_above_mult) / ma_value
+    else:
+        price_diff_above = 0
     if price_diff_above > near_threshold:
         strength = min(1.0, price_diff_above)
         return {
@@ -551,7 +729,10 @@ def convert_moving_average_to_signal(
         }
 
     # Check if price is significantly below MA (with tolerance)
-    price_diff_below = (ma_value * price_below_mult - current_price) / ma_value
+    if ma_value > 0:
+        price_diff_below = (ma_value * price_below_mult - current_price) / ma_value
+    else:
+        price_diff_below = 0
     if price_diff_below > near_threshold:
         strength = min(1.0, price_diff_below)
         return {
@@ -584,7 +765,7 @@ def convert_bollinger_to_signal(
         return None
 
     # Price touches or goes below lower band = oversold
-    if current_price <= lower_band:
+    if current_price <= lower_band and lower_band > 0:
         strength = min(1.0, (lower_band - current_price) / lower_band)
         return {
             "action": "buy",
@@ -594,7 +775,7 @@ def convert_bollinger_to_signal(
             "reason": f"Price at/below lower Bollinger band ({lower_band:.2f})",
         }
     # Price touches or goes above upper band = overbought
-    if current_price >= upper_band:
+    if current_price >= upper_band > 0:
         strength = min(1.0, (current_price - upper_band) / upper_band)
         return {
             "action": "sell",
@@ -746,7 +927,9 @@ def convert_psar_to_signal(
     trend_reversal_threshold = thresholds.get("trend_reversal_threshold", 0.0)
 
     # PSAR below price = uptrend = buy signal
-    if current_price > psar_value * (1 + trend_reversal_threshold):
+    if current_price > 0 and current_price > psar_value * (
+        1 + trend_reversal_threshold
+    ):
         strength = min(1.0, (current_price - psar_value) / current_price)
         return {
             "action": "buy",
@@ -757,7 +940,9 @@ def convert_psar_to_signal(
         }
 
     # PSAR above price = downtrend = sell signal
-    if current_price < psar_value * (1 - trend_reversal_threshold):
+    if current_price > 0 and current_price < psar_value * (
+        1 - trend_reversal_threshold
+    ):
         strength = min(1.0, (psar_value - current_price) / current_price)
         return {
             "action": "sell",
@@ -793,7 +978,7 @@ def convert_supertrend_to_signal(
         return None
 
     # Trend = 1 (uptrend) = buy signal
-    if trend_value == 1:
+    if trend_value == 1 and current_price > 0:
         strength = min(1.0, abs(current_price - supertrend_value) / current_price)
         return {
             "action": "buy",
@@ -804,7 +989,7 @@ def convert_supertrend_to_signal(
         }
 
     # Trend = -1 (downtrend) = sell signal
-    if trend_value == -1:
+    if trend_value == -1 and current_price > 0:
         strength = min(1.0, abs(current_price - supertrend_value) / current_price)
         return {
             "action": "sell",
@@ -842,7 +1027,7 @@ def convert_alligator_to_signal(
         return None
 
     # Uptrend: jaw < teeth < lips (alligator eating = bullish)
-    if jaw < teeth < lips:
+    if jaw < teeth < lips and current_price > 0:
         strength = min(1.0, (lips - jaw) / current_price)
         return {
             "action": "buy",
@@ -853,7 +1038,7 @@ def convert_alligator_to_signal(
         }
 
     # Downtrend: jaw > teeth > lips (alligator sleeping = bearish)
-    if jaw > teeth > lips:
+    if jaw > teeth > lips and current_price > 0:
         strength = min(1.0, (jaw - lips) / current_price)
         return {
             "action": "sell",
@@ -972,7 +1157,7 @@ def convert_linear_regression_to_signal(
     slope_negative = thresholds.get("slope_negative", 0.0)
 
     # Forecast above price = bullish
-    if forecast_value > current_price * (1 + slope_positive):
+    if current_price > 0 and forecast_value > current_price * (1 + slope_positive):
         strength = min(1.0, (forecast_value - current_price) / current_price)
         return {
             "action": "buy",
@@ -983,7 +1168,7 @@ def convert_linear_regression_to_signal(
         }
 
     # Forecast below price = bearish
-    if forecast_value < current_price * (1 - slope_negative):
+    if current_price > 0 and forecast_value < current_price * (1 - slope_negative):
         strength = min(1.0, (current_price - forecast_value) / current_price)
         return {
             "action": "sell",
@@ -1021,7 +1206,7 @@ def convert_pivot_to_signal(
     support_break = thresholds.get("support_break", 0.0)
 
     # Price above pivot = bullish
-    if current_price > pivot_value * (1 + resistance_break):
+    if current_price > 0 and current_price > pivot_value * (1 + resistance_break):
         strength = min(1.0, (current_price - pivot_value) / current_price)
         return {
             "action": "buy",
@@ -1032,7 +1217,7 @@ def convert_pivot_to_signal(
         }
 
     # Price below pivot = bearish
-    if current_price < pivot_value * (1 - support_break):
+    if current_price > 0 and current_price < pivot_value * (1 - support_break):
         strength = min(1.0, (pivot_value - current_price) / current_price)
         return {
             "action": "sell",
@@ -1186,7 +1371,7 @@ def convert_vwap_to_signal(
     price_below_threshold = thresholds.get("price_below_vwap", 0.0)
 
     # Price above VWAP = bullish
-    if current_price > vwap_value * (1 + price_above_threshold):
+    if vwap_value > 0 and current_price > vwap_value * (1 + price_above_threshold):
         strength = min(1.0, (current_price - vwap_value) / vwap_value)
         return {
             "action": "buy",
@@ -1197,7 +1382,7 @@ def convert_vwap_to_signal(
         }
 
     # Price below VWAP = bearish
-    if current_price < vwap_value * (1 - price_below_threshold):
+    if vwap_value > 0 and current_price < vwap_value * (1 - price_below_threshold):
         strength = min(1.0, (vwap_value - current_price) / vwap_value)
         return {
             "action": "sell",
@@ -1235,7 +1420,9 @@ def convert_vwap_ma_to_signal(
     price_below_threshold = thresholds.get("price_below_vwap", 0.0)
 
     # Price above VWAP MA = bullish
-    if current_price > vwap_ma_value * (1 + price_above_threshold):
+    if vwap_ma_value > 0 and current_price > vwap_ma_value * (
+        1 + price_above_threshold
+    ):
         strength = min(1.0, (current_price - vwap_ma_value) / vwap_ma_value)
         return {
             "action": "buy",
@@ -1246,7 +1433,9 @@ def convert_vwap_ma_to_signal(
         }
 
     # Price below VWAP MA = bearish
-    if current_price < vwap_ma_value * (1 - price_below_threshold):
+    if vwap_ma_value > 0 and current_price < vwap_ma_value * (
+        1 - price_below_threshold
+    ):
         strength = min(1.0, (vwap_ma_value - current_price) / vwap_ma_value)
         return {
             "action": "sell",
@@ -1282,7 +1471,7 @@ def convert_keltner_to_signal(
         return None
 
     # Price touches or goes above upper band = overbought
-    if current_price >= upper:
+    if current_price >= upper > 0:
         strength = min(1.0, (current_price - upper) / upper)
         return {
             "action": "sell",
@@ -1293,7 +1482,7 @@ def convert_keltner_to_signal(
         }
 
     # Price touches or goes below lower band = oversold
-    if current_price <= lower:
+    if current_price <= lower and lower > 0:
         strength = min(1.0, (lower - current_price) / lower)
         return {
             "action": "buy",
@@ -1333,7 +1522,7 @@ def convert_donchian_to_signal(
     lower_breakdown = thresholds.get("lower_breakdown", 0.0)
 
     # Price breaks above upper band = bullish breakout
-    if current_price > upper * (1 + upper_breakout):
+    if upper > 0 and current_price > upper * (1 + upper_breakout):
         strength = min(1.0, (current_price - upper) / upper)
         return {
             "action": "buy",
@@ -1344,7 +1533,7 @@ def convert_donchian_to_signal(
         }
 
     # Price breaks below lower band = bearish breakdown
-    if current_price < lower * (1 - lower_breakdown):
+    if lower > 0 and current_price < lower * (1 - lower_breakdown):
         strength = min(1.0, (lower - current_price) / lower)
         return {
             "action": "sell",

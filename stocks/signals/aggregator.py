@@ -142,6 +142,12 @@ class SignalAggregator:
                                 "model_weight": model_weight,
                                 "original_confidence": base_confidence,
                             },
+                            possible_gain=ml_signal.get("predicted_gain"),
+                            possible_loss=ml_signal.get("predicted_loss"),
+                            gain_probability=ml_signal.get("gain_probability"),
+                            loss_probability=ml_signal.get("loss_probability"),
+                            timeframe_prediction=ml_signal.get("timeframe_prediction"),
+                            consequences=ml_signal.get("consequences"),
                         )
                     )
 
@@ -154,6 +160,12 @@ class SignalAggregator:
                     confidence=float(social_signals.get("confidence", 0.0)),
                     strength=float(social_signals.get("strength", 0.0)),
                     metadata=social_signals,
+                    possible_gain=social_signals.get("possible_gain"),
+                    possible_loss=social_signals.get("possible_loss"),
+                    gain_probability=social_signals.get("gain_probability"),
+                    loss_probability=social_signals.get("loss_probability"),
+                    timeframe_prediction=social_signals.get("timeframe_prediction"),
+                    consequences=social_signals.get("consequences"),
                 )
             )
 
@@ -166,6 +178,12 @@ class SignalAggregator:
                     confidence=float(news_signals.get("confidence", 0.0)),
                     strength=float(news_signals.get("strength", 0.0)),
                     metadata=news_signals,
+                    possible_gain=news_signals.get("possible_gain"),
+                    possible_loss=news_signals.get("possible_loss"),
+                    gain_probability=news_signals.get("gain_probability"),
+                    loss_probability=news_signals.get("loss_probability"),
+                    timeframe_prediction=news_signals.get("timeframe_prediction"),
+                    consequences=news_signals.get("consequences"),
                 )
             )
 
@@ -178,6 +196,12 @@ class SignalAggregator:
                     confidence=float(indicator_signal.get("confidence", 0.0)),
                     strength=float(indicator_signal.get("strength", 0.0)),
                     metadata=indicator_signal,
+                    possible_gain=indicator_signal.get("possible_gain"),
+                    possible_loss=indicator_signal.get("possible_loss"),
+                    gain_probability=indicator_signal.get("gain_probability"),
+                    loss_probability=indicator_signal.get("loss_probability"),
+                    timeframe_prediction=indicator_signal.get("timeframe_prediction"),
+                    consequences=indicator_signal.get("consequences"),
                 )
                 for indicator_signal in indicator_signals
                 if isinstance(indicator_signal, dict)
@@ -192,6 +216,12 @@ class SignalAggregator:
                     confidence=float(pattern_signal.get("confidence", 0.0)),
                     strength=float(pattern_signal.get("confidence", 0.0)),
                     metadata=pattern_signal,
+                    possible_gain=pattern_signal.get("possible_gain"),
+                    possible_loss=pattern_signal.get("possible_loss"),
+                    gain_probability=pattern_signal.get("gain_probability"),
+                    loss_probability=pattern_signal.get("loss_probability"),
+                    timeframe_prediction=pattern_signal.get("timeframe_prediction"),
+                    consequences=pattern_signal.get("consequences"),
                 )
                 for pattern_signal in pattern_signals
                 if isinstance(pattern_signal, dict)
@@ -292,12 +322,17 @@ class SignalAggregator:
             weighted_confidence_sum / total_weight if total_weight > 0 else 0.0
         )
 
-        return {
+        # Aggregate prediction fields
+        aggregated_predictions = self._aggregate_predictions(signals, weights)
+
+        result = {
             "action": final_action,
             "confidence": round(final_confidence, 4),
             "reason": f"Weighted average: {final_action} with {final_confidence:.2%} confidence",
             "action_scores": {k: round(v, 4) for k, v in action_scores.items()},
         }
+        result.update(aggregated_predictions)
+        return result
 
     def _ensemble_voting(self, signals: list[Signal]) -> dict[str, Any]:
         """Aggregate signals using ensemble voting (majority rule)."""
@@ -333,12 +368,27 @@ class SignalAggregator:
             final_action = "hold"
             avg_confidence = 0.5
 
-        return {
+        # Get default weights for prediction aggregation
+        default_weights = {
+            "ml": 0.40,
+            "social_media": 0.10,
+            "news": 0.05,
+            "indicator": 0.30,
+            "pattern": 0.15,
+        }
+        weights = {**default_weights, **self.signal_weights}
+
+        # Aggregate prediction fields
+        aggregated_predictions = self._aggregate_predictions(signals, weights)
+
+        result = {
             "action": final_action,
             "confidence": round(avg_confidence, 4),
             "reason": f"Ensemble voting: {final_action} ({votes[final_action]} votes)",
             "votes": votes,
         }
+        result.update(aggregated_predictions)
+        return result
 
     def _threshold_based(
         self, signals: list[Signal], risk_score: float
@@ -387,11 +437,27 @@ class SignalAggregator:
             avg_confidence = sum(s.confidence for s in valid_signals) / len(
                 valid_signals
             )
-            return {
+
+            # Get default weights for prediction aggregation
+            default_weights = {
+                "ml": 0.40,
+                "social_media": 0.10,
+                "news": 0.05,
+                "indicator": 0.30,
+                "pattern": 0.15,
+            }
+            weights = {**default_weights, **self.signal_weights}
+
+            # Aggregate prediction fields from valid signals
+            aggregated_predictions = self._aggregate_predictions(valid_signals, weights)
+
+            result = {
                 "action": final_action,
                 "confidence": round(avg_confidence, 4),
                 "reason": f"All {len(valid_signals)} signals agree: {final_action}",
             }
+            result.update(aggregated_predictions)
+            return result
 
         return {
             "action": "hold",
@@ -407,6 +473,290 @@ class SignalAggregator:
             "Custom rule aggregation not fully implemented, using weighted average"
         )
         return self._weighted_average(signals)
+
+    def _process_signal_for_aggregation(
+        self,
+        signal: Signal,
+        effective_weights: dict[str, float],
+        weighted_gain_sum: float,
+        total_gain_weight: float,
+        weighted_loss_sum: float,
+        total_loss_weight: float,
+        weighted_gain_prob_sum: float,
+        weighted_loss_prob_sum: float,
+        total_prob_weight: float,
+        min_timeframes: list[str],
+        max_timeframes: list[str],
+        expected_timeframes: list[tuple[str, float]],
+        timeframe_weights_sum: float,
+        best_cases: list[dict[str, Any]],
+        base_cases: list[dict[str, Any]],
+        worst_cases: list[dict[str, Any]],
+    ) -> tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        list[str],
+        list[str],
+        list[tuple[str, float]],
+        float,
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+    ]:
+        """Process a single signal for aggregation."""
+        effective_weight = self._calculate_signal_weight(signal, effective_weights)
+
+        weighted_gain_sum, total_gain_weight, weighted_loss_sum, total_loss_weight = (
+            self._aggregate_gains_losses(
+                signal,
+                effective_weight,
+                weighted_gain_sum,
+                total_gain_weight,
+                weighted_loss_sum,
+                total_loss_weight,
+            )
+        )
+
+        weighted_gain_prob_sum, weighted_loss_prob_sum, total_prob_weight = (
+            self._aggregate_probabilities(
+                signal,
+                effective_weight,
+                weighted_gain_prob_sum,
+                weighted_loss_prob_sum,
+                total_prob_weight,
+            )
+        )
+
+        min_timeframes, max_timeframes, expected_timeframes, timeframe_weights_sum = (
+            self._aggregate_signal_timeframes(
+                signal,
+                effective_weight,
+                min_timeframes,
+                max_timeframes,
+                expected_timeframes,
+                timeframe_weights_sum,
+            )
+        )
+
+        best_cases, base_cases, worst_cases = self._aggregate_signal_scenarios(
+            signal, best_cases, base_cases, worst_cases
+        )
+
+        return (
+            weighted_gain_sum,
+            total_gain_weight,
+            weighted_loss_sum,
+            total_loss_weight,
+            weighted_gain_prob_sum,
+            weighted_loss_prob_sum,
+            total_prob_weight,
+            min_timeframes,
+            max_timeframes,
+            expected_timeframes,
+            timeframe_weights_sum,
+            best_cases,
+            base_cases,
+            worst_cases,
+        )
+
+    def _aggregate_timeframes(
+        self,
+        min_timeframes: list[str],
+        max_timeframes: list[str],
+        expected_timeframes: list[tuple[str, float]],
+        timeframe_weights_sum: float,
+    ) -> dict[str, Any] | None:
+        """Aggregate timeframe predictions."""
+        if not (min_timeframes or max_timeframes or expected_timeframes):
+            return None
+
+        timeframe_result: dict[str, Any] = {}
+        if min_timeframes:
+            timeframe_result["min_timeframe"] = min(min_timeframes)
+        if max_timeframes:
+            timeframe_result["max_timeframe"] = max(max_timeframes)
+        if expected_timeframes:
+            expected_timeframes.sort(key=lambda x: x[1], reverse=True)
+            timeframe_result["expected_timeframe"] = expected_timeframes[0][0]
+            timeframe_result["timeframe_confidence"] = (
+                round(timeframe_weights_sum / len(expected_timeframes), 4)
+                if timeframe_weights_sum > 0
+                else 0.0
+            )
+
+        return timeframe_result
+
+    def _aggregate_scenarios(
+        self,
+        best_cases: list[dict[str, Any]],
+        base_cases: list[dict[str, Any]],
+        worst_cases: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Aggregate scenario predictions."""
+        if not (best_cases or base_cases or worst_cases):
+            return None
+
+        scenarios: dict[str, Any] = {}
+        if best_cases:
+            best_case = max(
+                best_cases,
+                key=lambda x: x.get("gain", 0) * x.get("probability", 0),
+            )
+            scenarios["best_case"] = best_case
+        if base_cases:
+            total_base_weight = sum(c.get("probability", 0.5) for c in base_cases)
+            if total_base_weight > 0:
+                avg_gain = (
+                    sum(
+                        c.get("gain", 0) * c.get("probability", 0.5) for c in base_cases
+                    )
+                    / total_base_weight
+                )
+                avg_prob = sum(c.get("probability", 0.5) for c in base_cases) / len(
+                    base_cases
+                )
+                scenarios["base_case"] = {
+                    "gain": round(avg_gain, 4),
+                    "probability": round(avg_prob, 4),
+                    "timeframe": base_cases[0].get("timeframe", "N/A"),
+                }
+            else:
+                scenarios["base_case"] = base_cases[0]
+        if worst_cases:
+            worst_case = max(
+                worst_cases,
+                key=lambda x: abs(x.get("loss", 0)) * x.get("probability", 0),
+            )
+            scenarios["worst_case"] = worst_case
+
+        return scenarios
+
+    def _aggregate_predictions(
+        self, signals: list[Signal], weights: dict[str, float]
+    ) -> dict[str, Any]:
+        """
+        Aggregate prediction fields from all signals.
+
+        Args:
+            signals: List of signals to aggregate
+            weights: Dictionary of source type weights
+
+        Returns:
+            Dictionary with aggregated prediction fields
+        """
+        result: dict[str, Any] = {}
+
+        # Filter signals that have prediction data
+        signals_with_predictions = [
+            s
+            for s in signals
+            if s.possible_gain is not None or s.possible_loss is not None
+        ]
+
+        if not signals_with_predictions:
+            return result
+
+        # Get default weights
+        default_weights = {
+            "ml": 0.40,
+            "social_media": 0.10,
+            "news": 0.05,
+            "indicator": 0.30,
+            "pattern": 0.15,
+        }
+        effective_weights = {**default_weights, **weights}
+
+        # Aggregate gains/losses (weighted average)
+        total_gain_weight = 0.0
+        total_loss_weight = 0.0
+        weighted_gain_sum = 0.0
+        weighted_loss_sum = 0.0
+
+        # Aggregate probabilities (weighted average)
+        total_prob_weight = 0.0
+        weighted_gain_prob_sum = 0.0
+        weighted_loss_prob_sum = 0.0
+
+        # Aggregate timeframes
+        min_timeframes: list[str] = []
+        max_timeframes: list[str] = []
+        expected_timeframes: list[
+            tuple[str, float]
+        ] = []  # (timeframe, confidence * weight)
+        timeframe_weights_sum = 0.0
+
+        # Aggregate scenarios
+        best_cases: list[dict[str, Any]] = []
+        base_cases: list[dict[str, Any]] = []
+        worst_cases: list[dict[str, Any]] = []
+
+        for signal in signals_with_predictions:
+            (
+                weighted_gain_sum,
+                total_gain_weight,
+                weighted_loss_sum,
+                total_loss_weight,
+                weighted_gain_prob_sum,
+                weighted_loss_prob_sum,
+                total_prob_weight,
+                min_timeframes,
+                max_timeframes,
+                expected_timeframes,
+                timeframe_weights_sum,
+                best_cases,
+                base_cases,
+                worst_cases,
+            ) = self._process_signal_for_aggregation(
+                signal,
+                effective_weights,
+                weighted_gain_sum,
+                total_gain_weight,
+                weighted_loss_sum,
+                total_loss_weight,
+                weighted_gain_prob_sum,
+                weighted_loss_prob_sum,
+                total_prob_weight,
+                min_timeframes,
+                max_timeframes,
+                expected_timeframes,
+                timeframe_weights_sum,
+                best_cases,
+                base_cases,
+                worst_cases,
+            )
+
+        # Calculate aggregated values
+        if total_gain_weight > 0:
+            result["possible_gain"] = round(weighted_gain_sum / total_gain_weight, 4)
+        if total_loss_weight > 0:
+            result["possible_loss"] = round(weighted_loss_sum / total_loss_weight, 4)
+
+        if total_prob_weight > 0:
+            result["gain_probability"] = round(
+                weighted_gain_prob_sum / total_prob_weight, 4
+            )
+            result["loss_probability"] = round(
+                weighted_loss_prob_sum / total_prob_weight, 4
+            )
+
+        # Aggregate timeframes
+        timeframe_result = self._aggregate_timeframes(
+            min_timeframes, max_timeframes, expected_timeframes, timeframe_weights_sum
+        )
+        if timeframe_result:
+            result["timeframe_prediction"] = timeframe_result
+
+        # Combine scenarios
+        scenarios = self._aggregate_scenarios(best_cases, base_cases, worst_cases)
+        if scenarios:
+            result["consequences"] = scenarios
+
+        return result
 
     def _calculate_position_scale_factor(self, risk_score: float) -> float:
         """

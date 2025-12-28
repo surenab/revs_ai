@@ -78,7 +78,7 @@ export interface PatternDefinition {
   category: string;
   icon: React.ComponentType<{ className?: string }>;
   description: string;
-  patternType: "reversal" | "continuation";
+  patternType: "reversal" | "continuation" | "regime";
   formation?: string;
   reliability?: string;
   priceMovement?: string;
@@ -1148,6 +1148,55 @@ export const PATTERNS: PatternDefinition[] = [
     reliability: "~70% accuracy",
     priceMovement: "Price typically continues in original direction, target is typically measured by projecting the pole length from the breakout point",
     confidence: "Based on convergence, volume pattern, and breakout confirmation",
+  },
+  // Regime Detection Patterns
+  {
+    id: "trending_regime",
+    name: "Trending Regime",
+    category: "regime",
+    icon: TrendingUp,
+    description: "Strong directional movement regime (bullish or bearish trends). Identifies sustained directional price movement using ADX, moving averages, and price momentum.",
+    patternType: "regime",
+    formation: "Strong directional trends are identified when ADX > 20-25, indicating sustained movement. Bullish trends show price above moving averages with positive momentum. Bearish trends show price below moving averages with negative momentum.",
+    reliability: "~68% accuracy",
+    priceMovement: "Price typically continues in trend direction. Strong trends (ADX > 25) are more reliable and can last 5-21 days.",
+    confidence: "Based on ADX strength, moving average alignment, and price momentum. Stronger trends (higher ADX) have higher confidence.",
+  },
+  {
+    id: "ranging_regime",
+    name: "Ranging Regime",
+    category: "regime",
+    icon: Activity,
+    description: "Sideways consolidation regime with support/resistance levels. Detects consolidation periods using Bollinger Bands width, ATR, and price oscillation.",
+    patternType: "regime",
+    formation: "Ranging markets show narrow Bollinger Bands (low volatility), price oscillating within bands, and low ATR relative to price. Price moves sideways between support and resistance levels.",
+    reliability: "~55% accuracy",
+    priceMovement: "Price typically continues ranging. Breakouts from range can occur in either direction. Range-bound strategies work best during this regime.",
+    confidence: "Based on Bollinger Band width, price oscillation, and proximity to middle band. Higher confidence when price is near middle band.",
+  },
+  {
+    id: "volatile_regime",
+    name: "Volatile Regime",
+    category: "regime",
+    icon: Zap,
+    description: "High volatility regime with large price swings. Identifies high volatility periods using ATR, Bollinger Band expansion, and price range.",
+    patternType: "regime",
+    formation: "Volatile markets show wide Bollinger Bands (high volatility), high ATR relative to average, and large daily price ranges. Price makes large swings in both directions.",
+    reliability: "~50% accuracy",
+    priceMovement: "Price can move significantly in either direction. Volatile markets are unpredictable. Risk management is crucial during this regime.",
+    confidence: "Based on Bollinger Band width, ATR level, and daily range. Direction is uncertain, so confidence is lower. Signal depends on price position relative to bands.",
+  },
+  {
+    id: "regime_transition",
+    name: "Regime Transition",
+    category: "regime",
+    icon: GitMerge,
+    description: "Market transitioning between regimes. Detects transitions using ADX changes, Bollinger Band width changes, and price breakouts.",
+    patternType: "regime",
+    formation: "Transitions occur when ADX changes significantly (trend starting/ending), Bollinger Band width changes (volatility regime change), or price breaks out of previous range. These indicate the market is changing state.",
+    reliability: "~60% accuracy",
+    priceMovement: "Price direction depends on the new regime being entered. Watch for confirmation of the new regime before taking positions.",
+    confidence: "Based on magnitude of regime change indicators. Transitions to trending regimes are more reliable than transitions to volatile regimes.",
   },
 ];
 

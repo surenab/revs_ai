@@ -11,6 +11,7 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 seconds timeout
 });
 
 // Request interceptor to add auth token
@@ -31,11 +32,71 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Handle timeout errors
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      toast.error('Request timed out. Please check your connection and try again.');
+      return Promise.reject(error);
+    }
+
+    // Handle network errors (no response from server)
+    if (!error.response) {
+      toast.error('Network error. Please check your connection and try again.');
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
-      toast.error('Session expired. Please login again.');
+      // Only redirect if not already on login/register/forgot-password pages
+      const currentPath = window.location.pathname;
+      if (!currentPath.startsWith('/login') &&
+          !currentPath.startsWith('/register') &&
+          !currentPath.startsWith('/forgot-password')) {
+        window.location.href = '/login';
+        toast.error('Session expired. Please login again.');
+      }
+    } else if (error.response?.status === 400) {
+      // Handle validation errors - show detailed error messages
+      const errorData = error.response.data;
+      const requestUrl = error.config?.url || 'Unknown endpoint';
+
+      let errorMessage = 'Invalid request. Please check your input.';
+
+      if (errorData) {
+        // Handle different error response formats
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        } else if (typeof errorData === 'object') {
+          // Handle field-specific validation errors
+          const fieldErrors = Object.entries(errorData)
+            .map(([field, errors]: [string, any]) => {
+              if (Array.isArray(errors)) {
+                return `${field}: ${errors.join(', ')}`;
+              }
+              return `${field}: ${errors}`;
+            })
+            .join('; ');
+          if (fieldErrors) {
+            errorMessage = fieldErrors;
+          }
+        }
+      }
+
+      // Log for debugging
+      console.error('400 Bad Request:', {
+        url: requestUrl,
+        method: error.config?.method?.toUpperCase(),
+        data: errorData,
+        requestData: error.config?.data
+      });
+
+      toast.error(errorMessage);
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.');
     }
@@ -659,6 +720,7 @@ export interface TradingBotConfig {
   risk_per_trade: number;
   stop_loss_percent?: number;
   take_profit_percent?: number;
+  period_days?: number;
   enabled_indicators: Record<string, any>;
   indicator_thresholds?: Record<string, Record<string, number>>;
   enabled_patterns: Record<string, any>;
@@ -737,6 +799,7 @@ export interface BotCreateRequest {
   risk_per_trade: number;
   stop_loss_percent?: number;
   take_profit_percent?: number;
+  period_days?: number;
   enabled_indicators?: Record<string, any>;
   enabled_patterns?: Record<string, any>;
   buy_rules?: Record<string, any>;
@@ -944,6 +1007,36 @@ export const mlModelAPI = {
     api.post(`/stocks/ml-models/${modelId}/predict/`, data),
 };
 
+// Signal Prediction Types
+export interface TimeframePrediction {
+  min_timeframe?: string;
+  max_timeframe?: string;
+  expected_timeframe?: string;
+  timeframe_confidence?: number;
+}
+
+export interface ScenarioCase {
+  gain?: number;
+  loss?: number;
+  probability?: number;
+  timeframe?: string;
+}
+
+export interface Consequences {
+  best_case?: ScenarioCase;
+  base_case?: ScenarioCase;
+  worst_case?: ScenarioCase;
+}
+
+export interface SignalPrediction {
+  possible_gain?: number;
+  possible_loss?: number;
+  gain_probability?: number;
+  loss_probability?: number;
+  timeframe_prediction?: TimeframePrediction;
+  consequences?: Consequences;
+}
+
 // Signal History Types
 export interface BotSignalHistory {
   id: string;
@@ -958,7 +1051,7 @@ export interface BotSignalHistory {
   news_signals: Record<string, any>;
   indicator_signals: Record<string, any>;
   pattern_signals: Record<string, any>;
-  aggregated_signal: Record<string, any>;
+  aggregated_signal: Record<string, any> & SignalPrediction;
   final_decision: 'buy' | 'sell' | 'hold';
   decision_confidence?: number;
   risk_score?: number;

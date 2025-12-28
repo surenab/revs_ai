@@ -12,7 +12,16 @@ from django.utils import timezone
 
 from . import indicators, pattern_detector
 from .analyzers import DummyNewsAnalyzer, DummySocialAnalyzer
-from .ml_models.models import DummyMLModel, RSIModel, SimpleMovingAverageModel
+from .ml_models.base import BaseMLModel
+from .ml_models.models import (
+    AutoformerModel,
+    DummyMLModel,
+    InformerModel,
+    PatchTSTModel,
+    RSIModel,
+    SimpleMovingAverageModel,
+    TransformerRLModel,
+)
 from .models import (
     BotSignalHistory,
     MLModel,
@@ -72,7 +81,12 @@ class TradingBot:
                 results["stocks_analyzed"].append(stock_item.symbol)
 
                 # Get current price from price data
-                price_data = self._get_price_data(stock_item)
+                period_days = (
+                    self.bot_config.period_days
+                    if hasattr(self.bot_config, "period_days")
+                    else 14
+                )
+                price_data = self._get_price_data(stock_item, limit=period_days)
                 current_price = None
                 if price_data and len(price_data) > 0:
                     current_price = float(price_data[-1].get("close_price", 0))
@@ -152,8 +166,13 @@ class TradingBot:
         Returns:
             Dictionary with analysis results
         """
-        # Get price data
-        price_data = self._get_price_data(stock)
+        # Get price data using bot's period_days
+        period_days = (
+            self.bot_config.period_days
+            if hasattr(self.bot_config, "period_days")
+            else 14
+        )
+        price_data = self._get_price_data(stock, limit=period_days)
         if not price_data:
             return {
                 "action": "skip",
@@ -483,9 +502,7 @@ class TradingBot:
 
         # Get current price from latest tick
         latest_tick = (
-            StockTick.objects.filter(stock=stock)
-            .order_by("-timestamp")
-            .first()
+            StockTick.objects.filter(stock=stock).order_by("-timestamp").first()
         )
         if not latest_tick or not latest_tick.price:
             logger.error(f"No tick data for {stock.symbol}")
@@ -581,87 +598,139 @@ class TradingBot:
         return order
 
     def _get_price_data(self, stock: Stock, limit: int = 200) -> list[dict]:
-        """Get price data for stock from StockTick model, aggregated into OHLCV candles."""
+        """
+        Get price data for stock, prioritizing tick data from StockTick model.
+        Falls back to daily data from StockPrice model ONLY if no tick data is available.
+
+        Args:
+            stock: Stock instance
+            limit: Number of days to retrieve (default: 200)
+
+        Returns:
+            List of price data dictionaries with OHLCV format.
+            Each dict includes a '_data_source' key indicating 'tick' or 'price'.
+        """
         from collections import defaultdict
         from datetime import timedelta
 
-        # Get recent tick data (limit * 288 ticks per day for 5-minute intervals)
-        # Assuming 5-minute intervals: 288 ticks per day (24 hours * 60 minutes / 5)
-        tick_limit = limit * 288
+        # Calculate date range for the requested period
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=limit)
+
+        # First, try to get tick data and aggregate into daily candles
+        # Only use tick data if it exists - do not fall back to price data if ticks exist
         ticks = list(
-            StockTick.objects.filter(stock=stock)
-            .order_by("-timestamp")[:tick_limit]
+            StockTick.objects.filter(
+                stock=stock,
+                timestamp__date__gte=start_date,
+                timestamp__date__lte=end_date,
+            ).order_by("timestamp")
         )
 
-        if not ticks:
-            logger.warning(f"No tick data found for {stock.symbol}")
-            return []
+        if ticks:
+            # Aggregate ticks into daily OHLCV candles
+            # Group ticks by date
+            candles = defaultdict(
+                lambda: {
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "close": None,
+                    "volume": 0,
+                    "date": None,
+                }
+            )
 
-        # Aggregate ticks into 5-minute OHLCV candles
-        # Group ticks by 5-minute intervals
-        candles = defaultdict(
-            lambda: {
-                "open": None,
-                "high": None,
-                "low": None,
-                "close": None,
-                "volume": 0,
-                "timestamp": None,
-            }
-        )
+            for tick in ticks:
+                tick_date = tick.timestamp.date()
+                candle_key = tick_date.isoformat()
 
-        for tick in reversed(ticks):  # Process in chronological order
-            # Round timestamp to nearest 5-minute interval
-            tick_time = tick.timestamp
-            # Round down to nearest 5 minutes
-            rounded_minute = (tick_time.minute // 5) * 5
-            candle_time = tick_time.replace(minute=rounded_minute, second=0, microsecond=0)
-            candle_key = candle_time.isoformat()
+                price = float(tick.price) if tick.price else None
+                if price is None:
+                    continue
 
-            price = float(tick.price) if tick.price else None
-            if price is None:
-                continue
+                candle = candles[candle_key]
 
-            candle = candles[candle_key]
+                # Set open price (first tick of the day)
+                if candle["open"] is None:
+                    candle["open"] = price
+                    candle["date"] = tick_date
 
-            # Set open price (first tick in the interval)
-            if candle["open"] is None:
-                candle["open"] = price
-                candle["timestamp"] = candle_time
+                # Update high and low
+                if candle["high"] is None or price > candle["high"]:
+                    candle["high"] = price
+                if candle["low"] is None or price < candle["low"]:
+                    candle["low"] = price
 
-            # Update high and low
-            if candle["high"] is None or price > candle["high"]:
-                candle["high"] = price
-            if candle["low"] is None or price < candle["low"]:
-                candle["low"] = price
+                # Set close price (last tick of the day)
+                candle["close"] = price
 
-            # Set close price (last tick in the interval)
-            candle["close"] = price
+                # Accumulate volume
+                candle["volume"] += tick.volume or 0
 
-            # Accumulate volume
-            candle["volume"] += tick.volume or 0
+            # Convert to list format expected by indicators
+            price_data = [
+                {
+                    "symbol": stock.symbol,
+                    "open_price": Decimal(str(candle["open"])),
+                    "high_price": Decimal(str(candle["high"])),
+                    "low_price": Decimal(str(candle["low"])),
+                    "close_price": Decimal(str(candle["close"])),
+                    "volume": candle["volume"],
+                    "date": candle["date"].isoformat() if candle["date"] else None,
+                    "_data_source": "tick",  # Mark as tick data
+                }
+                for candle_key in sorted(candles.keys())
+                for candle in [candles[candle_key]]
+                if candle["open"] is not None
+            ]
 
-        # Convert to list format expected by indicators
-        price_data = []
-        for candle_key in sorted(candles.keys()):  # Sort chronologically
-            candle = candles[candle_key]
-            if candle["open"] is not None:
-                price_data.append(
-                    {
-                        "symbol": stock.symbol,
-                        "open_price": Decimal(str(candle["open"])),
-                        "high_price": Decimal(str(candle["high"])),
-                        "low_price": Decimal(str(candle["low"])),
-                        "close_price": Decimal(str(candle["close"])),
-                        "volume": candle["volume"],
-                        "date": candle["timestamp"].date().isoformat()
-                        if candle["timestamp"]
-                        else None,
-                    }
+            # Limit to requested number of days (most recent)
+            if len(price_data) > limit:
+                price_data = price_data[-limit:]
+
+            if price_data:
+                logger.info(
+                    f"Using StockTick data for {stock.symbol}: {len(price_data)} days aggregated from {len(ticks)} ticks"
                 )
+                return price_data
 
-        # Limit to requested number of candles
-        return price_data[-limit:] if len(price_data) > limit else price_data
+        # Fallback: Get daily data from StockPrice model ONLY if no tick data exists
+        logger.info(
+            f"No tick data found for {stock.symbol} in date range {start_date} to {end_date}, "
+            f"falling back to StockPrice daily data"
+        )
+
+        daily_prices = list(
+            StockPrice.objects.filter(
+                stock=stock, interval="1d", date__gte=start_date, date__lte=end_date
+            ).order_by("date")[:limit]
+        )
+
+        if daily_prices:
+            # Convert StockPrice to expected format
+            price_data = [
+                {
+                    "symbol": stock.symbol,
+                    "open_price": price.open_price,
+                    "high_price": price.high_price,
+                    "low_price": price.low_price,
+                    "close_price": price.close_price,
+                    "volume": price.volume,
+                    "date": price.date.isoformat() if price.date else None,
+                    "_data_source": "price",  # Mark as price data (fallback)
+                }
+                for price in daily_prices
+            ]
+            logger.info(
+                f"Using StockPrice data (fallback) for {stock.symbol}: {len(price_data)} days"
+            )
+            return price_data
+
+        logger.warning(
+            f"No price data found for {stock.symbol} in date range {start_date} to {end_date}"
+        )
+        return []
 
     def _get_last_day_tick_data(self, stock: Stock) -> list[dict]:
         """Get tick data for the last trading day."""
@@ -1033,6 +1102,68 @@ class TradingBot:
 
         return filtered_patterns
 
+    def _create_ml_model(self, db_model: MLModel) -> BaseMLModel:
+        """Create ML model instance from database model."""
+        if db_model.framework != "custom":
+            return DummyMLModel()
+
+        model_name_lower = db_model.name.lower()
+        metadata = db_model.metadata or {}
+
+        # Model creation mapping - check in order of specificity
+        model_creators = [
+            # Simple models (no parameters)
+            (lambda name: "sma" in name, lambda: SimpleMovingAverageModel()),
+            (lambda name: "rsi" in name, lambda: RSIModel()),
+            # Transformer models (with parameters)
+            (
+                lambda name: "patchtst" in name or "patch" in name,
+                lambda: PatchTSTModel(
+                    sequence_length=metadata.get("sequence_length", 60),
+                    prediction_horizon=metadata.get("prediction_horizon", 5),
+                    patch_length=metadata.get("patch_length", 8),
+                    n_patches=metadata.get("n_patches", 8),
+                    use_dummy=True,
+                ),
+            ),
+            (
+                lambda name: "informer" in name,
+                lambda: InformerModel(
+                    sequence_length=metadata.get("sequence_length", 96),
+                    prediction_horizon=metadata.get("prediction_horizon", 24),
+                    distil_layers=metadata.get("distil_layers", 2),
+                    use_dummy=True,
+                ),
+            ),
+            (
+                lambda name: "autoformer" in name,
+                lambda: AutoformerModel(
+                    sequence_length=metadata.get("sequence_length", 96),
+                    prediction_horizon=metadata.get("prediction_horizon", 24),
+                    moving_avg_window=metadata.get("moving_avg_window", 25),
+                    use_dummy=True,
+                ),
+            ),
+            (
+                lambda name: "transformer" in name and "rl" in name,
+                lambda: TransformerRLModel(
+                    sequence_length=metadata.get("sequence_length", 60),
+                    prediction_horizon=metadata.get("prediction_horizon", 5),
+                    rl_algorithm=metadata.get("rl_algorithm", "dqn"),
+                    reward_type=metadata.get("reward_type", "simple"),
+                    use_dummy=True,
+                ),
+            ),
+        ]
+
+        # Find matching model creator
+        for check_func, create_func in model_creators:
+            if check_func(model_name_lower):
+                return create_func()
+
+        # Default fallback
+        return DummyMLModel()
+
     def _get_ml_predictions(
         self, stock: Stock, price_data: list[dict], indicators_data: dict
     ) -> list[dict]:
@@ -1045,24 +1176,12 @@ class TradingBot:
 
         for model_id in enabled_ml_models:
             try:
-                # Try to get model from database
                 db_model = MLModel.objects.filter(id=model_id, is_active=True).first()
                 if not db_model:
                     logger.warning(f"ML model {model_id} not found or inactive")
                     continue
 
-                # For now, use dummy models based on framework
-                # In production, this would load actual trained models
-                if db_model.framework == "custom":
-                    if "sma" in db_model.name.lower():
-                        model = SimpleMovingAverageModel()
-                    elif "rsi" in db_model.name.lower():
-                        model = RSIModel()
-                    else:
-                        model = DummyMLModel()
-                else:
-                    model = DummyMLModel()
-
+                model = self._create_ml_model(db_model)
                 prediction = model.predict(stock, price_data, indicators_data)
                 if prediction:
                     prediction["model_id"] = str(model_id)
@@ -1153,6 +1272,12 @@ class TradingBot:
         """Store signal history for transparency."""
         try:
             tick_data = self._get_last_day_tick_data(stock)
+            # Serialize full price_data array for exact reproduction
+            serialized_price_data = (
+                [self._serialize_price_data(pd) for pd in price_data]
+                if price_data
+                else []
+            )
             BotSignalHistory.objects.create(
                 bot_config=self.bot_config,
                 stock=stock,
@@ -1161,6 +1286,7 @@ class TradingBot:
                     if price_data
                     else {},
                     "count": len(price_data),
+                    "data": serialized_price_data,  # Full price data array used for execution
                     "tick_data": tick_data,
                     "tick_count": len(tick_data),
                 },
@@ -1230,6 +1356,9 @@ class TradingBot:
                 serialized[key] = value
             elif value is None:
                 serialized[key] = None
+            elif key == "_data_source":
+                # Preserve data source indicator (tick or price)
+                serialized[key] = str(value)
             else:
                 serialized[key] = str(value)  # Convert other types to string
         return serialized

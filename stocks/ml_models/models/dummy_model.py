@@ -36,16 +36,56 @@ class DummyMLModel(BaseMLModel):
         """
         actions = ["buy", "sell", "hold"]
         action = random.choice(actions)
+        confidence = round(random.uniform(0.5, 0.95), 2)
+
+        predicted_gain = round(random.uniform(0.0, 0.10), 4) if action == "buy" else 0.0
+        predicted_loss = round(random.uniform(0.0, 0.05), 4) if action == "buy" else 0.0
+
+        # Calculate probabilities based on confidence
+        gain_probability = round(confidence * 0.7, 4) if action == "buy" else 0.0
+        loss_probability = (
+            round((1.0 - confidence) * 0.3, 4) if action == "buy" else 0.0
+        )
+
+        # Timeframe prediction
+        timeframes = ["1d", "3d", "5d", "7d", "10d"]
+        timeframe_prediction = {
+            "min_timeframe": random.choice(["1d", "2d", "3d"]),
+            "max_timeframe": random.choice(["5d", "7d", "10d"]),
+            "expected_timeframe": random.choice(timeframes),
+            "timeframe_confidence": round(confidence * 0.8, 4),
+        }
+
+        # Scenario analysis
+        consequences = {}
+        if action == "buy":
+            consequences = {
+                "best_case": {
+                    "gain": round(predicted_gain * 1.5, 4),
+                    "probability": round(gain_probability * 0.8, 4),
+                    "timeframe": timeframe_prediction["min_timeframe"],
+                },
+                "base_case": {
+                    "gain": round(predicted_gain, 4),
+                    "probability": round(gain_probability, 4),
+                    "timeframe": timeframe_prediction["expected_timeframe"],
+                },
+                "worst_case": {
+                    "loss": round(predicted_loss, 4),
+                    "probability": round(loss_probability, 4),
+                    "timeframe": timeframe_prediction["max_timeframe"],
+                },
+            }
 
         return {
             "action": action,
-            "confidence": round(random.uniform(0.5, 0.95), 2),
-            "predicted_gain": round(random.uniform(0.0, 0.10), 4)
-            if action == "buy"
-            else 0.0,
-            "predicted_loss": round(random.uniform(0.0, 0.05), 4)
-            if action == "buy"
-            else 0.0,
+            "confidence": confidence,
+            "predicted_gain": predicted_gain,
+            "predicted_loss": predicted_loss,
+            "gain_probability": gain_probability,
+            "loss_probability": loss_probability,
+            "timeframe_prediction": timeframe_prediction,
+            "consequences": consequences,
             "metadata": {
                 "model_name": self.name,
                 "random_seed": random.randint(1, 1000),

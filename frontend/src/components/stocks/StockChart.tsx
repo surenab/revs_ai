@@ -154,9 +154,45 @@ const CustomTooltip: React.FC<TooltipProps> = ({
 }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+
+    // Format date with year from fullTime, data timestamp, or label
+    let formattedDate = label;
+
+    // Try to get the original timestamp from the data
+    const timestamp = data.fullTime;
+
+    if (timestamp) {
+      try {
+        const date = parseISO(timestamp);
+        // Format with year: "MMM dd, yyyy" for dates, or "MMM dd, yyyy HH:mm" for times
+        if (timestamp.includes("T") || timestamp.includes(" ")) {
+          // Has time component
+          formattedDate = format(date, "MMM dd, yyyy HH:mm");
+        } else {
+          // Date only
+          formattedDate = format(date, "MMM dd, yyyy");
+        }
+      } catch {
+        // If parsing fails, check if label already has year
+        const hasYear = label && (label.includes(",") || /\d{4}/.test(label));
+        if (!hasYear && label) {
+          // Label doesn't have year, but we can't parse timestamp
+          // Use label as fallback
+          formattedDate = label;
+        }
+      }
+    } else if (label) {
+      // Check if label already has year
+      const hasYear = label.includes(",") || /\d{4}/.test(label);
+      if (!hasYear) {
+        // Label doesn't have year, use as-is (shouldn't happen if data processing is correct)
+        formattedDate = label;
+      }
+    }
+
     return (
       <div className="bg-gray-900/95 backdrop-blur-md border border-white/20 rounded-lg p-3 shadow-xl">
-        <p className="text-white/60 text-sm mb-2">{label}</p>
+        <p className="text-white/60 text-sm mb-2">{formattedDate}</p>
         <div className="space-y-1">
           <div className="flex justify-between space-x-4">
             <span className="text-white/80">Price:</span>
@@ -675,8 +711,138 @@ const StockChart: React.FC<StockChartProps> = ({
       return new Date(timeA).getTime() - new Date(timeB).getTime();
     });
 
+    // Filter data for MAX period: show only 1st, 15th, and last day of each month
+    let dataToProcess = sortedData;
+    if (period === "MAX") {
+      // Group data by year-month
+      const dataByMonth = new Map<string, typeof sortedData>();
+
+      sortedData.forEach((item) => {
+        const timestamp = "timestamp" in item ? item.timestamp : item.date;
+        if (!timestamp) return;
+
+        const date = parseISO(timestamp);
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+
+        if (!dataByMonth.has(monthKey)) {
+          dataByMonth.set(monthKey, []);
+        }
+        dataByMonth.get(monthKey)!.push(item);
+      });
+
+      // For each month, keep only 1st, 15th, and last day
+      const filteredData: typeof sortedData = [];
+      const addedItems = new Set<string>(); // Track added items to prevent duplicates
+
+      dataByMonth.forEach((monthData) => {
+        // Sort month data by date
+        monthData.sort((a, b) => {
+          const timeA = "timestamp" in a ? a.timestamp : a.date;
+          const timeB = "timestamp" in b ? b.timestamp : b.date;
+          if (!timeA || !timeB) return 0;
+          return new Date(timeA).getTime() - new Date(timeB).getTime();
+        });
+
+        // Helper to get item key for deduplication
+        const getItemKey = (item: (typeof sortedData)[0]): string => {
+          const timestamp = "timestamp" in item ? item.timestamp : item.date;
+          return timestamp || "";
+        };
+
+        // Get 1st day
+        if (monthData.length > 0) {
+          const firstItem = monthData[0];
+          const firstTimestamp =
+            "timestamp" in firstItem ? firstItem.timestamp : firstItem.date;
+          if (firstTimestamp) {
+            const firstDate = parseISO(firstTimestamp);
+            const itemKey = getItemKey(firstItem);
+            if (!addedItems.has(itemKey)) {
+              if (firstDate.getDate() === 1) {
+                filteredData.push(firstItem);
+                addedItems.add(itemKey);
+              } else {
+                // If no exact 1st, use the earliest available
+                filteredData.push(firstItem);
+                addedItems.add(itemKey);
+              }
+            }
+          }
+        }
+
+        // Get 15th day (closest to 15th)
+        const fifteenthItem = monthData.find((item) => {
+          const itemTimestamp =
+            "timestamp" in item ? item.timestamp : item.date;
+          if (!itemTimestamp) return false;
+          const itemDate = parseISO(itemTimestamp);
+          return itemDate.getDate() === 15;
+        });
+        if (fifteenthItem) {
+          const itemKey = getItemKey(fifteenthItem);
+          if (!addedItems.has(itemKey)) {
+            filteredData.push(fifteenthItem);
+            addedItems.add(itemKey);
+          }
+        } else {
+          // Find closest to 15th
+          const closestTo15 = monthData.reduce((closest, item) => {
+            const itemTimestamp =
+              "timestamp" in item ? item.timestamp : item.date;
+            const closestTimestamp =
+              "timestamp" in closest ? closest.timestamp : closest.date;
+            if (!itemTimestamp || !closestTimestamp) return closest;
+
+            const itemDate = parseISO(itemTimestamp);
+            const closestDate = parseISO(closestTimestamp);
+            const itemDiff = Math.abs(itemDate.getDate() - 15);
+            const closestDiff = Math.abs(closestDate.getDate() - 15);
+            return itemDiff < closestDiff ? item : closest;
+          });
+          if (closestTo15 && monthData.indexOf(closestTo15) !== 0) {
+            const itemKey = getItemKey(closestTo15);
+            if (!addedItems.has(itemKey)) {
+              filteredData.push(closestTo15);
+              addedItems.add(itemKey);
+            }
+          }
+        }
+
+        // Get last day
+        if (monthData.length > 0) {
+          const lastItem = monthData[monthData.length - 1];
+          const lastTimestamp =
+            "timestamp" in lastItem ? lastItem.timestamp : lastItem.date;
+          if (lastTimestamp) {
+            const lastDate = parseISO(lastTimestamp);
+            // Check if it's the last day of the month
+            const nextDay = new Date(lastDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            if (
+              nextDay.getMonth() !== lastDate.getMonth() ||
+              lastDate.getDate() >= 28
+            ) {
+              const itemKey = getItemKey(lastItem);
+              if (!addedItems.has(itemKey)) {
+                filteredData.push(lastItem);
+                addedItems.add(itemKey);
+              }
+            }
+          }
+        }
+      });
+
+      // Sort filtered data again
+      dataToProcess = filteredData.sort((a, b) => {
+        const timeA = "timestamp" in a ? a.timestamp : a.date;
+        const timeB = "timestamp" in b ? b.timestamp : b.date;
+        if (!timeA || !timeB) return 0;
+        return new Date(timeA).getTime() - new Date(timeB).getTime();
+      });
+    }
+
     // Process data for chart
-    const processed = sortedData.map((item, index) => {
+    const processed = dataToProcess.map((item, index) => {
       const timestamp = "timestamp" in item ? item.timestamp : item.date;
       let formattedTime: string;
 
@@ -690,26 +856,26 @@ const StockChart: React.FC<StockChartProps> = ({
         if (period === "1D") {
           // Check if this is tick data (has 'price' field instead of 'close_price')
           const isTickData = "price" in item && !("close_price" in item);
-          // Show date and time: "MMM dd HH:mm:ss" or "MMM dd HH:mm"
+          // Show date and time with year: "MMM dd, yyyy HH:mm:ss" or "MMM dd, yyyy HH:mm"
           formattedTime = isTickData
-            ? format(date, "MMM dd HH:mm:ss")
-            : format(date, "MMM dd HH:mm");
+            ? format(date, "MMM dd, yyyy HH:mm:ss")
+            : format(date, "MMM dd, yyyy HH:mm");
         }
-        // For periods up to 1 month, show date and time
+        // For periods up to 1 month, show date with year
         else if (["5D", "1M"].includes(period)) {
-          formattedTime = format(date, "MMM dd");
+          formattedTime = format(date, "MMM dd, yyyy");
         }
-        // For longer periods, show month/year
+        // For longer periods, show month/day with year
         else if (["6M", "YTD", "1Y"].includes(period)) {
-          formattedTime = format(date, "MMM dd");
+          formattedTime = format(date, "MMM dd, yyyy");
         }
-        // For very long periods, show year
+        // For very long periods, show month/year (already has year)
         else if (["5Y", "10Y"].includes(period)) {
           formattedTime = format(date, "MMM yyyy");
         }
-        // Default format
+        // Default format with year
         else {
-          formattedTime = format(date, "MMM dd");
+          formattedTime = format(date, "MMM dd, yyyy");
         }
       }
 

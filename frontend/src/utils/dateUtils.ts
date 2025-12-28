@@ -6,6 +6,13 @@ import type { TimePeriod } from "../components/stocks/TimePeriodSelector";
 export const calculateStartDate = (period: TimePeriod): Date => {
   const now = new Date();
 
+  // For MAX, return a very old date (50 years ago) to get all available data
+  if (period.value === "MAX") {
+    const startDate = new Date(now);
+    startDate.setFullYear(startDate.getFullYear() - 50);
+    return startDate;
+  }
+
   if (period.isYTD) {
     // Year to date - start from January 1st of current year
     return new Date(now.getFullYear(), 0, 1);
@@ -127,6 +134,8 @@ export const getDataLimit = (period: TimePeriod): number => {
       return 10000; // 5 years (limited to API max of 10000 records)
     case "10Y":
       return 10000; // 10 years (limited to API max of 10000 records)
+    case "MAX":
+      return 100000; // MAX - return a very large number to get all available data
     default:
       return 100;
   }

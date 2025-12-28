@@ -108,10 +108,63 @@ class SentimentScorer:
             action = "hold"
             confidence = 0.5
 
-        return {
+        result = {
             "sentiment_score": round(raw_score, 4),
             "normalized_score": round(normalized, 4),
             "action": action,
             "confidence": round(confidence, 4),
             "strength": round(abs(raw_score), 4),
         }
+
+        # Add predictions for buy/sell actions
+        if action in ["buy", "sell"]:
+            # Sentiment signals typically have shorter timeframes (1-3 days)
+            # Gain/loss based on sentiment strength
+            sentiment_strength = abs(raw_score)
+            if action == "buy":
+                possible_gain = 2.0 + (sentiment_strength * 4.0)  # 2-6%
+                possible_loss = 1.0 + (sentiment_strength * 2.0)  # 1-3%
+            else:
+                possible_gain = 1.5 + (sentiment_strength * 3.5)  # 1.5-5%
+                possible_loss = 1.0 + (sentiment_strength * 3.0)  # 1-4%
+
+            result["possible_gain"] = round(possible_gain, 2)
+            result["possible_loss"] = round(possible_loss, 2)
+
+            # Probabilities based on sentiment strength and confidence
+            gain_probability = round(confidence * sentiment_strength * 0.6, 4)
+            loss_probability = round(
+                (1.0 - confidence) * (1.0 - sentiment_strength) * 0.4, 4
+            )
+
+            result["gain_probability"] = gain_probability
+            result["loss_probability"] = loss_probability
+
+            # Timeframe prediction (sentiment impact is short-lived)
+            result["timeframe_prediction"] = {
+                "min_timeframe": "4h",
+                "max_timeframe": "3d",
+                "expected_timeframe": "1d",
+                "timeframe_confidence": round(confidence * 0.7, 4),
+            }
+
+            # Scenario analysis
+            result["consequences"] = {
+                "best_case": {
+                    "gain": round(possible_gain * 1.3, 2),
+                    "probability": round(gain_probability * 0.7, 4),
+                    "timeframe": "4h",
+                },
+                "base_case": {
+                    "gain": round(possible_gain, 2),
+                    "probability": round(gain_probability, 4),
+                    "timeframe": "1d",
+                },
+                "worst_case": {
+                    "loss": round(possible_loss, 2),
+                    "probability": round(loss_probability, 4),
+                    "timeframe": "3d",
+                },
+            }
+
+        return result

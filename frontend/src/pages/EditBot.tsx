@@ -70,6 +70,7 @@ const EditBot: React.FC = () => {
     risk_per_trade: "2.00",
     stop_loss_percent: "",
     take_profit_percent: "",
+    period_days: "14",
     enabled_indicators: {} as Record<string, any>,
     enabled_patterns: {} as Record<string, any>,
     buy_rules: {} as Record<string, any>,
@@ -158,6 +159,7 @@ const EditBot: React.FC = () => {
         risk_per_trade: botData.risk_per_trade?.toString() || "2.00",
         stop_loss_percent: botData.stop_loss_percent?.toString() || "",
         take_profit_percent: botData.take_profit_percent?.toString() || "",
+        period_days: botData.period_days?.toString() || "14",
         enabled_indicators: botData.enabled_indicators || {},
         enabled_patterns: botData.enabled_patterns || {},
         buy_rules: botData.buy_rules || {},
@@ -275,6 +277,7 @@ const EditBot: React.FC = () => {
         budget_type: botForm.budget_type,
         assigned_stocks: botForm.assigned_stocks,
         risk_per_trade: parseFloat(botForm.risk_per_trade),
+        period_days: parseInt(botForm.period_days) || 14,
         enabled_indicators: botForm.enabled_indicators || {},
         enabled_patterns: botForm.enabled_patterns || {},
         buy_rules: botForm.buy_rules || {},
@@ -448,6 +451,24 @@ const EditBot: React.FC = () => {
                     placeholder="My Trading Bot"
                   />
                 </div>
+
+                <ThresholdInput
+                  label="Analysis Period (Days)"
+                  icon={LineChart}
+                  value={botForm.period_days || "14"}
+                  onChange={(value) =>
+                    setBotForm({
+                      ...botForm,
+                      period_days: String(value),
+                    })
+                  }
+                  type="number"
+                  min="1"
+                  max="365"
+                  step="1"
+                  required
+                  tooltip="Number of days to look back for indicators and patterns calculation"
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
@@ -749,9 +770,9 @@ const EditBot: React.FC = () => {
               isComplete={botForm.enabled_ml_models.length > 0}
             >
               <MLModelSelector
-                mlModels={mlModels}
-                enabledModels={botForm.enabled_ml_models}
-                modelWeights={botForm.ml_model_weights}
+                models={mlModels}
+                selectedModels={botForm.enabled_ml_models || []}
+                modelWeights={botForm.ml_model_weights || {}}
                 onModelsChange={(models) =>
                   setBotForm({ ...botForm, enabled_ml_models: models })
                 }

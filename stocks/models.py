@@ -4,7 +4,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -1024,6 +1024,16 @@ class TradingBotConfig(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal("0.01"))],
         help_text=_("Take profit percentage (0.01-100)"),
+    )
+
+    # Analysis period
+    period_days = models.IntegerField(
+        _("period days"),
+        default=14,
+        validators=[MinValueValidator(1), MaxValueValidator(365)],
+        help_text=_(
+            "Number of days to look back for indicators and patterns calculation (1-365)"
+        ),
     )
 
     # ML Models configuration

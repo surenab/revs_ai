@@ -147,7 +147,7 @@ class StockTimeSeriesView(APIView):
         interval = validated_data["interval"]
         start_date = validated_data.get("start_date")
         end_date = validated_data.get("end_date")
-        limit = validated_data["limit"]
+        limit = validated_data.get("limit")  # Can be None if -1 or 0 was sent
 
         # Build query
         queryset = StockPrice.objects.filter(stock=stock, interval=interval)
@@ -157,8 +157,11 @@ class StockTimeSeriesView(APIView):
         if end_date:
             queryset = queryset.filter(date__lte=end_date)
 
-        # Order by date descending and limit results
-        prices = queryset.order_by("-date")[:limit]
+        # Order by date descending
+        queryset = queryset.order_by("-date")
+
+        # Apply limit only if specified (None means return all data)
+        prices = queryset[:limit] if limit is not None else queryset
 
         # Serialize the data
         price_serializer = StockPriceListSerializer(prices, many=True)
@@ -562,15 +565,13 @@ class StockTickDataView(APIView):
         if start_time and end_time:
             # Find the last available day with tick data for this stock
             last_tick = (
-                StockTick.objects.filter(stock=stock)
-                .order_by("-timestamp")
-                .first()
+                StockTick.objects.filter(stock=stock).order_by("-timestamp").first()
             )
-            
+
             if last_tick:
                 # Get the date of the last available tick
                 last_tick_date = last_tick.timestamp.date()
-                
+
                 # Set start_time to beginning of that day (00:00:00)
                 start_time = timezone.make_aware(
                     datetime.combine(last_tick_date, datetime.min.time())
@@ -1964,6 +1965,7 @@ class BotSignalHistoryViewSet(generics.ListAPIView):
 
     serializer_class = BotSignalHistoryListSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+    pagination_class = None  # Disable pagination to return all signal histories
 
     def get_queryset(self):
         """Filter by bot, stock, date range, etc."""

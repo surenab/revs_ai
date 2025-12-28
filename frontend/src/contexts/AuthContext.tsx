@@ -64,13 +64,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const parsedUser = JSON.parse(savedUser);
           setUser(parsedUser);
           // Verify token is still valid by fetching user profile
+          // Add timeout to prevent infinite loading
           try {
-            await refreshUser();
-          } catch (error) {
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Token validation timeout")),
+                10000
+              )
+            );
+            await Promise.race([refreshUser(), timeoutPromise]);
+          } catch (error: any) {
             console.error("Token validation failed:", error);
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
-            setUser(null);
+            // Only clear auth if it's a real auth error, not a timeout
+            if (
+              error.response?.status === 401 ||
+              error.message === "Token validation timeout"
+            ) {
+              localStorage.removeItem("token");
+              localStorage.removeItem("user");
+              setUser(null);
+            }
           }
         } catch (error) {
           console.error("Failed to parse saved user:", error);
@@ -97,11 +110,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       toast.success("Login successful!");
     } catch (error: any) {
-      const message =
-        error.response?.data?.message ||
-        error.response?.data?.detail ||
-        "Login failed. Please check your credentials.";
-      toast.error(message);
+      // Handle timeout and network errors
+      if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        toast.error(
+          "Request timed out. Please check your connection and try again."
+        );
+      } else if (!error.response) {
+        toast.error(
+          "Network error. Please check your connection and try again."
+        );
+      } else {
+        const message =
+          error.response?.data?.message ||
+          error.response?.data?.detail ||
+          "Login failed. Please check your credentials.";
+        toast.error(message);
+      }
       throw error;
     } finally {
       setIsLoading(false);

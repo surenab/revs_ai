@@ -12,7 +12,7 @@ import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, BarChart3, Loader2 } from "lucide-react";
 import { useWatchlist } from "../../contexts/WatchlistContext";
 import { stockAPI } from "../../lib/api";
-import type { StockPrice, IntradayPrice } from "../../lib/api";
+import type { StockPrice, IntradayPrice, StockTick } from "../../lib/api";
 import { TIME_PERIODS } from "../../components/stocks/TimePeriodSelector";
 import type { TimePeriod } from "../../components/stocks/TimePeriodSelector";
 import { format, parseISO } from "date-fns";
@@ -36,7 +36,7 @@ interface ProcessedDataPoint {
 
 interface StockChartData {
   symbol: string;
-  data: (StockPrice | IntradayPrice)[];
+  data: (StockPrice | IntradayPrice | StockTick)[];
   color: string;
   latestPrice?: number;
   priceChange?: number;
@@ -71,25 +71,23 @@ const WatchlistPortfolioChart: React.FC = () => {
   const fetchStockData = async (
     symbol: string,
     period: TimePeriod
-  ): Promise<(StockPrice | IntradayPrice)[]> => {
+  ): Promise<(StockPrice | IntradayPrice | StockTick)[]> => {
     try {
       const startDate = calculateStartDate(period);
       const endDate = calculateEndDate();
       const limit = getDataLimit(period);
 
       if (shouldUseIntradayData(period)) {
-        // For 1D period, use intraday data
-        const interval = getIntradayInterval();
+        // For 1D period, use tick data from StockTick model
         const tradingDayStart = getTradingDayStart();
 
-        const response = await stockAPI.getIntradayData(symbol, {
-          interval,
+        const response = await stockAPI.getTickData(symbol, {
           start_time: formatDateTimeForAPI(tradingDayStart),
           end_time: formatDateTimeForAPI(endDate),
-          limit,
-          session_type: "regular",
+          limit: 10000, // Get all ticks for the day
+          market_hours_only: false,
         });
-        return response.data.prices || [];
+        return response.data.ticks || [];
       } else {
         // For other periods, use historical daily data
         const interval = getHistoricalInterval();
@@ -155,8 +153,10 @@ const WatchlistPortfolioChart: React.FC = () => {
 
     stocksData.forEach((stock) => {
       stock.data.forEach((point) => {
-        // Handle both StockPrice (has date) and IntradayPrice (has timestamp)
+        // Handle StockPrice (has date), IntradayPrice (has timestamp), and StockTick (has timestamp)
         const dateOrTimestamp = "date" in point ? point.date : point.timestamp;
+        if (!dateOrTimestamp) return;
+
         const timeKey = shouldUseIntradayData(selectedPeriod)
           ? format(parseISO(dateOrTimestamp), "HH:mm")
           : format(parseISO(dateOrTimestamp), "MM/dd");
@@ -169,7 +169,12 @@ const WatchlistPortfolioChart: React.FC = () => {
         }
 
         const dataPoint = timeMap.get(timeKey)!;
-        dataPoint[stock.symbol] = point.close_price;
+        // Handle StockTick (has price) vs StockPrice/IntradayPrice (has close_price)
+        const price =
+          "price" in point && !("close_price" in point)
+            ? (point as StockTick).price
+            : (point as StockPrice | IntradayPrice).close_price;
+        dataPoint[stock.symbol] = price;
       });
     });
 

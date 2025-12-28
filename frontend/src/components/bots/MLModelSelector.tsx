@@ -21,31 +21,32 @@ interface MLModelSelectorProps {
 }
 
 export const MLModelSelector: React.FC<MLModelSelectorProps> = ({
-  models,
-  selectedModels,
-  modelWeights,
+  models = [],
+  selectedModels = [],
+  modelWeights = {},
   onModelsChange,
   onWeightsChange,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const toggleModel = (modelId: string) => {
-    if (selectedModels.includes(modelId)) {
-      onModelsChange(selectedModels.filter((id) => id !== modelId));
-      const newWeights = { ...modelWeights };
+    const safeSelectedModels = selectedModels || [];
+    if (safeSelectedModels.includes(modelId)) {
+      onModelsChange(safeSelectedModels.filter((id) => id !== modelId));
+      const newWeights = { ...(modelWeights || {}) };
       delete newWeights[modelId];
       onWeightsChange(newWeights);
     } else {
-      onModelsChange([...selectedModels, modelId]);
-      onWeightsChange({ ...modelWeights, [modelId]: 50 });
+      onModelsChange([...safeSelectedModels, modelId]);
+      onWeightsChange({ ...(modelWeights || {}), [modelId]: 50 });
     }
   };
 
   const updateWeight = (modelId: string, weight: number) => {
-    onWeightsChange({ ...modelWeights, [modelId]: weight });
+    onWeightsChange({ ...(modelWeights || {}), [modelId]: weight });
   };
 
-  const totalWeight = Object.values(modelWeights).reduce(
+  const totalWeight = Object.values(modelWeights || {}).reduce(
     (sum, w) => sum + w,
     0
   );
@@ -114,10 +115,10 @@ export const MLModelSelector: React.FC<MLModelSelectorProps> = ({
         </div>
       )}
 
-      {selectedModels.length > 0 && (
+      {(selectedModels || []).length > 0 && (
         <div className="space-y-3">
-          {selectedModels.map((modelId) => {
-            const model = models.find((m) => m.id === modelId);
+          {(selectedModels || []).map((modelId) => {
+            const model = (models || []).find((m) => m.id === modelId);
             if (!model) return null;
 
             return (
@@ -143,7 +144,7 @@ export const MLModelSelector: React.FC<MLModelSelectorProps> = ({
                 <SignalWeightSlider
                   label="Model Weight"
                   icon={Brain}
-                  value={modelWeights[modelId] || 50}
+                  value={(modelWeights || {})[modelId] || 50}
                   onChange={(value) => updateWeight(modelId, value)}
                   min={0}
                   max={100}

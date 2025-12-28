@@ -504,6 +504,16 @@ const BotOverviewTab: React.FC<{
               {new Date(bot.updated_at).toLocaleString()}
             </span>
           </div>
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+            <span className="text-xs sm:text-sm text-gray-400">
+              Analysis Period
+            </span>
+            <span className="text-xs sm:text-sm text-white">
+              {bot.period_days
+                ? `${bot.period_days} days`
+                : "14 days (default)"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1290,14 +1300,20 @@ const BotExecutionsTab: React.FC<{
                       <h4 className="text-white font-medium text-sm sm:text-base">
                         {execution.stock_symbol}
                       </h4>
-                      <p className="text-xs sm:text-sm text-gray-400 capitalize">
-                        {execution.action}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs sm:text-sm text-gray-400 capitalize">
+                          {execution.action}
+                        </p>
+                        <span className="text-xs text-gray-500">•</span>
+                        <p className="text-xs sm:text-sm text-gray-400">
+                          {new Date(execution.timestamp).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-left sm:text-right">
                     <p className="text-xs sm:text-sm text-gray-400">
-                      {new Date(execution.timestamp).toLocaleString()}
+                      {new Date(execution.timestamp).toLocaleTimeString()}
                     </p>
                     {execution.risk_score && (
                       <p className="text-xs text-gray-500">

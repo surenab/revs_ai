@@ -18,6 +18,7 @@ export const TIME_PERIODS: TimePeriod[] = [
   { value: "1Y", label: "1Y", type: "historical", days: 365 },
   { value: "5Y", label: "5Y", type: "historical", days: 1825 },
   { value: "10Y", label: "10Y", type: "historical", days: 3650 },
+  { value: "MAX", label: "MAX", type: "historical" },
 ];
 
 interface TimePeriodSelectorProps {

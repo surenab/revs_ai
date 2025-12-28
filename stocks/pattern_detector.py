@@ -84,6 +84,12 @@ class PatternMatch:
         signal: str,
         confidence: float,
         description: str,
+        possible_gain: float | None = None,
+        possible_loss: float | None = None,
+        gain_probability: float | None = None,
+        loss_probability: float | None = None,
+        timeframe_prediction: dict | None = None,
+        consequences: dict | None = None,
     ):
         self.pattern = pattern
         self.pattern_name = pattern_name
@@ -92,10 +98,16 @@ class PatternMatch:
         self.signal = signal  # "bullish", "bearish", or "neutral"
         self.confidence = confidence  # 0.0 to 1.0
         self.description = description
+        self.possible_gain = possible_gain
+        self.possible_loss = possible_loss
+        self.gain_probability = gain_probability
+        self.loss_probability = loss_probability
+        self.timeframe_prediction = timeframe_prediction or {}
+        self.consequences = consequences or {}
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
+        result = {
             "pattern": self.pattern,
             "pattern_name": self.pattern_name,
             "index": self.index,
@@ -104,6 +116,181 @@ class PatternMatch:
             "confidence": self.confidence,
             "description": self.description,
         }
+        # Add prediction fields if they exist
+        if self.possible_gain is not None:
+            result["possible_gain"] = self.possible_gain
+        if self.possible_loss is not None:
+            result["possible_loss"] = self.possible_loss
+        if self.gain_probability is not None:
+            result["gain_probability"] = self.gain_probability
+        if self.loss_probability is not None:
+            result["loss_probability"] = self.loss_probability
+        if self.timeframe_prediction:
+            result["timeframe_prediction"] = self.timeframe_prediction
+        if self.consequences:
+            result["consequences"] = self.consequences
+        return result
+
+
+def _calculate_pattern_predictions(
+    pattern_type: str,
+    signal: str,
+    confidence: float,
+    price_data: list[dict] | None = None,
+) -> dict:
+    """
+    Calculate predictions for pattern signals.
+
+    Args:
+        pattern_type: Type of pattern (e.g., 'three_white_soldiers')
+        signal: Signal type ('bullish', 'bearish', 'neutral')
+        confidence: Pattern confidence (0-1)
+        price_data: Optional price data for calculating targets
+
+    Returns:
+        Dictionary with prediction fields
+    """
+    predictions: dict = {}
+
+    # Pattern-specific parameters
+    pattern_params: dict[str, dict] = {
+        "three_white_soldiers": {
+            "bullish_gain": (5.0, 15.0),
+            "bullish_loss": (2.0, 5.0),
+            "timeframe": ("3d", "7d", "5d"),
+            "success_rate": 0.70,
+        },
+        "morning_doji_star": {
+            "bullish_gain": (4.0, 12.0),
+            "bullish_loss": (1.5, 4.0),
+            "timeframe": ("3d", "7d", "5d"),
+            "success_rate": 0.68,
+        },
+        "head_and_shoulders": {
+            "bearish_gain": (3.0, 10.0),
+            "bearish_loss": (2.0, 6.0),
+            "timeframe": ("5d", "14d", "10d"),
+            "success_rate": 0.65,
+        },
+        "double_top": {
+            "bearish_gain": (3.0, 10.0),
+            "bearish_loss": (2.0, 6.0),
+            "timeframe": ("5d", "14d", "10d"),
+            "success_rate": 0.63,
+        },
+        "double_bottom": {
+            "bullish_gain": (4.0, 12.0),
+            "bullish_loss": (1.5, 4.0),
+            "timeframe": ("3d", "10d", "7d"),
+            "success_rate": 0.66,
+        },
+        "trending_regime": {
+            "bullish_gain": (5.0, 20.0),
+            "bullish_loss": (2.0, 6.0),
+            "bearish_gain": (5.0, 20.0),
+            "bearish_loss": (2.0, 6.0),
+            "timeframe": ("5d", "21d", "14d"),
+            "success_rate": 0.68,
+        },
+        "ranging_regime": {
+            "bullish_gain": (2.0, 8.0),
+            "bullish_loss": (1.0, 3.0),
+            "bearish_gain": (2.0, 8.0),
+            "bearish_loss": (1.0, 3.0),
+            "timeframe": ("3d", "14d", "7d"),
+            "success_rate": 0.55,
+        },
+        "volatile_regime": {
+            "bullish_gain": (3.0, 15.0),
+            "bullish_loss": (2.0, 8.0),
+            "bearish_gain": (3.0, 15.0),
+            "bearish_loss": (2.0, 8.0),
+            "timeframe": ("1d", "7d", "3d"),
+            "success_rate": 0.50,
+        },
+        "regime_transition": {
+            "bullish_gain": (4.0, 15.0),
+            "bullish_loss": (2.0, 6.0),
+            "bearish_gain": (4.0, 15.0),
+            "bearish_loss": (2.0, 6.0),
+            "timeframe": ("3d", "14d", "7d"),
+            "success_rate": 0.60,
+        },
+    }
+
+    # Get default parameters
+    default_params = {
+        "bullish_gain": (3.0, 10.0),
+        "bullish_loss": (1.5, 4.0),
+        "bearish_gain": (3.0, 10.0),
+        "bearish_loss": (2.0, 6.0),
+        "timeframe": ("3d", "7d", "5d"),
+        "success_rate": 0.60,
+    }
+
+    params = pattern_params.get(pattern_type, default_params)
+
+    if signal in ["bullish", "bearish"]:
+        # Determine gain/loss ranges
+        if signal == "bullish":
+            gain_range = params.get("bullish_gain", default_params["bullish_gain"])
+            loss_range = params.get("bullish_loss", default_params["bullish_loss"])
+        else:
+            gain_range = params.get("bearish_gain", default_params["bearish_gain"])
+            loss_range = params.get("bearish_loss", default_params["bearish_loss"])
+
+        # Calculate possible gain/loss scaled by confidence
+        possible_gain = gain_range[0] + (gain_range[1] - gain_range[0]) * confidence
+        possible_loss = loss_range[0] + (loss_range[1] - loss_range[0]) * (
+            1.0 - confidence
+        )
+
+        predictions["possible_gain"] = round(possible_gain, 2)
+        predictions["possible_loss"] = round(possible_loss, 2)
+
+        # Calculate probabilities
+        success_rate = params.get("success_rate", default_params["success_rate"])
+        gain_probability = success_rate * confidence
+        loss_probability = (1.0 - success_rate) * (1.0 - confidence)
+
+        predictions["gain_probability"] = round(min(0.95, gain_probability), 4)
+        predictions["loss_probability"] = round(min(0.95, loss_probability), 4)
+
+        # Timeframe prediction
+        tf_min, tf_max, tf_expected = params.get(
+            "timeframe", default_params["timeframe"]
+        )
+        predictions["timeframe_prediction"] = {
+            "min_timeframe": tf_min,
+            "max_timeframe": tf_max,
+            "expected_timeframe": tf_expected,
+            "timeframe_confidence": round(confidence, 4),
+        }
+
+        # Scenario analysis
+        best_gain = gain_range[1] * confidence
+        base_gain = possible_gain
+        worst_loss = -loss_range[1] * (1.0 - confidence)
+
+        predictions["consequences"] = {
+            "best_case": {
+                "gain": round(best_gain, 2),
+                "probability": round(gain_probability * 0.8, 4),
+                "timeframe": tf_min,
+            },
+            "base_case": {
+                "gain": round(base_gain, 2),
+                "probability": round(gain_probability, 4),
+                "timeframe": tf_expected,
+            },
+            "worst_case": {
+                "loss": round(abs(worst_loss), 2),
+                "probability": round(loss_probability, 4),
+                "timeframe": tf_max,
+            },
+        }
+
+    return predictions
 
 
 def to_candlestick(data: dict, index: int) -> Candlestick | None:
@@ -158,6 +345,11 @@ def detect_three_white_soldiers(data: list[dict]) -> list[PatternMatch]:
         if wick_ratio1 > 0.4 or wick_ratio2 > 0.4 or wick_ratio3 > 0.4:
             continue
 
+        # Calculate predictions for this pattern
+        predictions = _calculate_pattern_predictions(
+            "three_white_soldiers", "bullish", 0.8, data[max(0, i - 10) : i + 1]
+        )
+
         matches.append(
             PatternMatch(
                 pattern="three_white_soldiers",
@@ -167,6 +359,12 @@ def detect_three_white_soldiers(data: list[dict]) -> list[PatternMatch]:
                 signal="bullish",
                 confidence=0.8,
                 description="Strong bullish reversal pattern. Three consecutive bullish candles with each closing higher than the previous.",
+                possible_gain=predictions.get("possible_gain"),
+                possible_loss=predictions.get("possible_loss"),
+                gain_probability=predictions.get("gain_probability"),
+                loss_probability=predictions.get("loss_probability"),
+                timeframe_prediction=predictions.get("timeframe_prediction"),
+                consequences=predictions.get("consequences"),
             )
         )
 
@@ -743,7 +941,10 @@ def detect_tri_star(data: list[dict]) -> list[PatternMatch]:
         # All three candles should be dojis (small body)
         doji_threshold = 0.1
         if (
-            c1.body_size / c1.total_range > doji_threshold
+            c1.total_range == 0
+            or c2.total_range == 0
+            or c3.total_range == 0
+            or c1.body_size / c1.total_range > doji_threshold
             or c2.body_size / c2.total_range > doji_threshold
             or c3.body_size / c3.total_range > doji_threshold
         ):
@@ -1105,6 +1306,512 @@ def detect_homing_pigeon(data: list[dict]) -> list[PatternMatch]:
     return matches
 
 
+def _determine_trending_signal(
+    current_plus_di: float | None,
+    current_minus_di: float | None,
+    price_above_sma: bool,
+    price_momentum: float,
+    current_adx: float,
+    is_strong_trend: bool,
+) -> tuple[str, float, str] | None:
+    """Determine signal, confidence, and trend strength for trending regime."""
+    # Determine signal based on DI and price position
+    if current_plus_di is not None and current_minus_di is not None:
+        if current_plus_di > current_minus_di and price_above_sma:
+            signal = "bullish"
+            confidence = min(0.95, 0.6 + (current_adx - 20) / 50.0)
+            trend_strength = "strong" if is_strong_trend else "moderate"
+            return signal, confidence, trend_strength
+        if current_minus_di > current_plus_di and not price_above_sma:
+            signal = "bearish"
+            confidence = min(0.95, 0.6 + (current_adx - 20) / 50.0)
+            trend_strength = "strong" if is_strong_trend else "moderate"
+            return signal, confidence, trend_strength
+        return None
+
+    # Fallback to price momentum
+    if price_momentum > 0.02:  # 2% above SMA
+        return "bullish", 0.65, "moderate"
+    if price_momentum < -0.02:  # 2% below SMA
+        return "bearish", 0.65, "moderate"
+    return None
+
+
+def detect_trending_regime(data: list[dict]) -> list[PatternMatch]:
+    """
+    Detect Trending Regime pattern.
+
+    Identifies strong directional trends using ADX, moving averages, and price momentum.
+    A trending regime indicates sustained directional movement (bullish or bearish).
+    """
+    matches: list[PatternMatch] = []
+
+    if len(data) < 20:
+        return matches
+
+    # Import indicators module
+    from stocks import indicators
+
+    # Calculate required indicators
+    adx_data = indicators.calculate_adx(data, period=14)
+    adx_values = adx_data.get("adx", [])
+    plus_di = adx_data.get("plus_di", [])
+    minus_di = adx_data.get("minus_di", [])
+
+    sma_20 = indicators.calculate_sma(data, period=20)
+
+    # Check for trending regime in recent periods
+    lookback = min(10, len(data) - 1)
+    for i in range(len(data) - lookback, len(data)):
+        if i < 20:  # Need at least 20 periods for ADX
+            continue
+
+        current_adx = adx_values[i] if i < len(adx_values) else None
+        current_plus_di = plus_di[i] if i < len(plus_di) else None
+        current_minus_di = minus_di[i] if i < len(minus_di) else None
+
+        if current_adx is None:
+            continue
+
+        # Strong trend: ADX > 25 indicates strong trend
+        # ADX > 20 indicates moderate trend
+        is_strong_trend = current_adx > 25
+        is_moderate_trend = current_adx > 20
+
+        if not (is_strong_trend or is_moderate_trend):
+            continue
+
+        # Determine trend direction
+        current_price = to_number(data[i].get("close_price"))
+        sma_20_val = sma_20[i] if i < len(sma_20) and sma_20[i] is not None else None
+
+        if current_price is None or sma_20_val is None:
+            continue
+
+        # Check price momentum
+        price_above_sma = current_price > sma_20_val
+        price_momentum = (
+            (current_price - sma_20_val) / sma_20_val if sma_20_val > 0 else 0
+        )
+
+        # Determine signal using helper function
+        signal_result = _determine_trending_signal(
+            current_plus_di,
+            current_minus_di,
+            price_above_sma,
+            price_momentum,
+            current_adx,
+            is_strong_trend,
+        )
+        if signal_result is None:
+            continue
+        signal, confidence, trend_strength = signal_result
+
+        # Calculate predictions
+        predictions = _calculate_pattern_predictions(
+            "trending_regime", signal, confidence, data[max(0, i - 20) : i + 1]
+        )
+
+        matches.append(
+            PatternMatch(
+                pattern="trending_regime",
+                pattern_name="Trending Regime",
+                index=i,
+                candles=20,
+                signal=signal,
+                confidence=confidence,
+                description=f"{trend_strength.capitalize()} {signal} trending regime. ADX: {current_adx:.2f}, Price momentum: {price_momentum * 100:.2f}%",
+                possible_gain=predictions.get("possible_gain"),
+                possible_loss=predictions.get("possible_loss"),
+                gain_probability=predictions.get("gain_probability"),
+                loss_probability=predictions.get("loss_probability"),
+                timeframe_prediction=predictions.get("timeframe_prediction"),
+                consequences=predictions.get("consequences"),
+            )
+        )
+
+    return matches
+
+
+def detect_ranging_regime(data: list[dict]) -> list[PatternMatch]:
+    """
+    Detect Ranging Regime pattern.
+
+    Detects sideways consolidation using Bollinger Bands width, ATR, and price oscillation.
+    A ranging regime indicates consolidation with support/resistance levels.
+    """
+    matches: list[PatternMatch] = []
+
+    if len(data) < 20:
+        return matches
+
+    # Import indicators module
+    from stocks import indicators
+
+    # Calculate required indicators
+    bb_data = indicators.calculate_bollinger_bands(data, period=20)
+    bb_upper = bb_data.get("upper", [])
+    bb_middle = bb_data.get("middle", [])
+    bb_lower = bb_data.get("lower", [])
+
+    atr_values = indicators.calculate_atr(data, period=14)
+
+    # Check for ranging regime in recent periods
+    lookback = min(10, len(data) - 1)
+    for i in range(len(data) - lookback, len(data)):
+        if i < 20:  # Need at least 20 periods
+            continue
+
+        current_price = to_number(data[i].get("close_price"))
+        bb_upper_val = bb_upper[i] if i < len(bb_upper) else None
+        bb_middle_val = bb_middle[i] if i < len(bb_middle) else None
+        bb_lower_val = bb_lower[i] if i < len(bb_lower) else None
+        atr_val = atr_values[i] if i < len(atr_values) else None
+
+        if (
+            current_price is None
+            or bb_upper_val is None
+            or bb_middle_val is None
+            or bb_lower_val is None
+            or atr_val is None
+        ):
+            continue
+
+        # Calculate Bollinger Band width (normalized)
+        bb_width = (
+            (bb_upper_val - bb_lower_val) / bb_middle_val if bb_middle_val > 0 else 0
+        )
+
+        # Check price oscillation in recent periods
+        recent_prices = [
+            to_number(data[j].get("close_price"))
+            for j in range(max(0, i - 10), i + 1)
+            if to_number(data[j].get("close_price")) is not None
+        ]
+
+        if len(recent_prices) < 5:
+            continue
+
+        price_range = max(recent_prices) - min(recent_prices)
+        price_oscillation = price_range / bb_middle_val if bb_middle_val > 0 else 0
+
+        # Ranging regime characteristics:
+        # 1. Narrow Bollinger Bands (low volatility)
+        # 2. Price oscillating within bands
+        # 3. Low ATR relative to price
+        is_narrow_bands = bb_width < 0.05  # Less than 5% width
+        is_low_oscillation = price_oscillation < 0.08  # Less than 8% oscillation
+        is_price_in_bands = bb_lower_val <= current_price <= bb_upper_val
+
+        # Check if price is near middle band (ranging)
+        distance_from_middle = abs(current_price - bb_middle_val) / bb_middle_val
+        is_near_middle = distance_from_middle < 0.02  # Within 2% of middle
+
+        if (is_narrow_bands or is_low_oscillation) and is_price_in_bands:
+            # Determine signal (neutral for ranging, but can be slightly bullish/bearish)
+            if current_price > bb_middle_val:
+                signal = "bullish"  # Slight bullish bias
+                confidence = 0.55
+            elif current_price < bb_middle_val:
+                signal = "bearish"  # Slight bearish bias
+                confidence = 0.55
+            else:
+                signal = "neutral"
+                confidence = 0.6
+
+            # Higher confidence if price is near middle
+            if is_near_middle:
+                confidence = 0.7
+
+            matches.append(
+                PatternMatch(
+                    pattern="ranging_regime",
+                    pattern_name="Ranging Regime",
+                    index=i,
+                    candles=20,
+                    signal=signal,
+                    confidence=confidence,
+                    description=f"Sideways consolidation regime. BB width: {bb_width * 100:.2f}%, Price oscillation: {price_oscillation * 100:.2f}%, Price near middle: {is_near_middle}",
+                )
+            )
+
+    return matches
+
+
+def detect_volatile_regime(data: list[dict]) -> list[PatternMatch]:
+    """
+    Detect Volatile Regime pattern.
+
+    Identifies high volatility periods using ATR, Bollinger Band expansion, and price range.
+    A volatile regime indicates high volatility with large price swings.
+    """
+    matches: list[PatternMatch] = []
+
+    if len(data) < 20:
+        return matches
+
+    # Import indicators module
+    from stocks import indicators
+
+    # Calculate required indicators
+    bb_data = indicators.calculate_bollinger_bands(data, period=20)
+    bb_upper = bb_data.get("upper", [])
+    bb_middle = bb_data.get("middle", [])
+    bb_lower = bb_data.get("lower", [])
+
+    atr_values = indicators.calculate_atr(data, period=14)
+
+    # Calculate average ATR for comparison
+    recent_atr = [
+        atr_values[j]
+        for j in range(max(0, len(data) - 20), len(data))
+        if atr_values[j] is not None
+    ]
+    avg_atr = sum(recent_atr) / len(recent_atr) if recent_atr else None
+
+    # Check for volatile regime in recent periods
+    lookback = min(10, len(data) - 1)
+    for i in range(len(data) - lookback, len(data)):
+        if i < 20:  # Need at least 20 periods
+            continue
+
+        current_price = to_number(data[i].get("close_price"))
+        high_price = to_number(data[i].get("high_price"))
+        low_price = to_number(data[i].get("low_price"))
+        bb_upper_val = bb_upper[i] if i < len(bb_upper) else None
+        bb_middle_val = bb_middle[i] if i < len(bb_middle) else None
+        bb_lower_val = bb_lower[i] if i < len(bb_lower) else None
+        atr_val = atr_values[i] if i < len(atr_values) else None
+
+        if (
+            current_price is None
+            or high_price is None
+            or low_price is None
+            or bb_upper_val is None
+            or bb_middle_val is None
+            or bb_lower_val is None
+            or atr_val is None
+            or avg_atr is None
+        ):
+            continue
+
+        # Calculate Bollinger Band width (normalized)
+        bb_width = (
+            (bb_upper_val - bb_lower_val) / bb_middle_val if bb_middle_val > 0 else 0
+        )
+
+        # Calculate daily price range
+        daily_range = high_price - low_price
+        range_ratio = daily_range / current_price if current_price > 0 else 0
+
+        # Volatile regime characteristics:
+        # 1. Wide Bollinger Bands (high volatility)
+        # 2. High ATR relative to average
+        # 3. Large daily price range
+        is_wide_bands = bb_width > 0.10  # More than 10% width
+        is_high_atr = atr_val > avg_atr * 1.5  # 50% above average
+        is_large_range = range_ratio > 0.03  # More than 3% daily range
+
+        # Check if price is touching bands (high volatility)
+        is_touching_upper = current_price >= bb_upper_val * 0.98
+        is_touching_lower = current_price <= bb_lower_val * 1.02
+
+        if (is_wide_bands or is_high_atr) and is_large_range:
+            # Determine signal based on price position
+            if is_touching_upper:
+                signal = "bearish"  # Overbought in volatile market
+                confidence = 0.65
+            elif is_touching_lower:
+                signal = "bullish"  # Oversold in volatile market
+                confidence = 0.65
+            else:
+                signal = "neutral"  # High volatility, direction uncertain
+                confidence = 0.6
+
+            volatility_level = "extreme" if bb_width > 0.15 else "high"
+
+            matches.append(
+                PatternMatch(
+                    pattern="volatile_regime",
+                    pattern_name="Volatile Regime",
+                    index=i,
+                    candles=20,
+                    signal=signal,
+                    confidence=confidence,
+                    description=f"{volatility_level.capitalize()} volatility regime. BB width: {bb_width * 100:.2f}%, ATR: {atr_val / current_price * 100:.2f}%, Daily range: {range_ratio * 100:.2f}%",
+                )
+            )
+
+    return matches
+
+
+def _calculate_transition_indicators(
+    current_adx: float,
+    prev_adx: float,
+    current_bb_width: float,
+    prev_bb_width: float,
+    current_price: float,
+    prev_prices: list[float],
+) -> tuple[bool, bool, bool]:
+    """Calculate transition indicators."""
+    adx_change = abs(current_adx - prev_adx)
+    is_adx_transition = adx_change > 5  # Significant change
+
+    bb_width_change = abs(current_bb_width - prev_bb_width)
+    is_bb_transition = bb_width_change > 0.02  # 2% change
+
+    if prev_prices:
+        prev_range_high = max(prev_prices)
+        prev_range_low = min(prev_prices)
+        is_breaking_out = (
+            current_price > prev_range_high * 1.02
+            or current_price < prev_range_low * 0.98
+        )
+    else:
+        is_breaking_out = False
+
+    return is_adx_transition, is_bb_transition, is_breaking_out
+
+
+def _determine_transition_type(
+    current_adx: float,
+    prev_adx: float,
+    current_bb_width: float,
+    prev_bb_width: float,
+    current_price: float,
+    bb_middle_val: float,
+) -> tuple[str, str]:
+    """Determine transition type and signal."""
+    if current_adx > prev_adx:
+        transition_type = "trending"
+        signal = "bullish" if current_price > bb_middle_val else "bearish"
+    elif current_bb_width > prev_bb_width:
+        transition_type = "volatile"
+        signal = "neutral"
+    else:
+        transition_type = "ranging"
+        signal = "neutral"
+
+    return transition_type, signal
+
+
+def detect_regime_transition(data: list[dict]) -> list[PatternMatch]:
+    """
+    Detect Regime Transition pattern.
+
+    Detects transitions between regimes using regime change indicators.
+    A transition regime indicates the market is changing from one state to another.
+    """
+    matches: list[PatternMatch] = []
+
+    if len(data) < 30:
+        return matches
+
+    # Import indicators module
+    from stocks import indicators
+
+    # Calculate ADX to detect trend changes
+    adx_data = indicators.calculate_adx(data, period=14)
+    adx_values = adx_data.get("adx", [])
+
+    # Calculate Bollinger Bands to detect volatility changes
+    bb_data = indicators.calculate_bollinger_bands(data, period=20)
+    bb_upper = bb_data.get("upper", [])
+    bb_middle = bb_data.get("middle", [])
+    bb_lower = bb_data.get("lower", [])
+
+    # Check for regime transitions in recent periods
+    lookback = min(10, len(data) - 1)
+    for i in range(len(data) - lookback, len(data)):
+        if i < 30:  # Need at least 30 periods to detect transitions
+            continue
+
+        current_adx = adx_values[i] if i < len(adx_values) else None
+        prev_adx = adx_values[i - 5] if i >= 5 and i - 5 < len(adx_values) else None
+
+        current_price = to_number(data[i].get("close_price"))
+        bb_upper_val = bb_upper[i] if i < len(bb_upper) else None
+        bb_middle_val = bb_middle[i] if i < len(bb_middle) else None
+        bb_lower_val = bb_lower[i] if i < len(bb_lower) else None
+
+        if (
+            current_adx is None
+            or prev_adx is None
+            or current_price is None
+            or bb_upper_val is None
+            or bb_middle_val is None
+            or bb_lower_val is None
+        ):
+            continue
+
+        # Calculate Bollinger Band width
+        current_bb_width = (
+            (bb_upper_val - bb_lower_val) / bb_middle_val if bb_middle_val > 0 else 0
+        )
+
+        # Get previous BB width
+        prev_bb_upper = bb_upper[i - 5] if i >= 5 and i - 5 < len(bb_upper) else None
+        prev_bb_middle = bb_middle[i - 5] if i >= 5 and i - 5 < len(bb_middle) else None
+        prev_bb_lower = bb_lower[i - 5] if i >= 5 and i - 5 < len(bb_lower) else None
+
+        if prev_bb_upper is None or prev_bb_middle is None or prev_bb_lower is None:
+            continue
+
+        prev_bb_width = (
+            (prev_bb_upper - prev_bb_lower) / prev_bb_middle
+            if prev_bb_middle > 0
+            else 0
+        )
+
+        # Get previous prices for breakout detection
+        prev_prices = [
+            to_number(data[j].get("close_price"))
+            for j in range(max(0, i - 10), i - 5)
+            if to_number(data[j].get("close_price")) is not None
+        ]
+
+        # Calculate transition indicators
+        is_adx_transition, is_bb_transition, is_breaking_out = (
+            _calculate_transition_indicators(
+                current_adx,
+                prev_adx,
+                current_bb_width,
+                prev_bb_width,
+                current_price,
+                prev_prices,
+            )
+        )
+
+        if is_adx_transition or is_bb_transition or is_breaking_out:
+            # Determine transition type and signal
+            transition_type, signal = _determine_transition_type(
+                current_adx,
+                prev_adx,
+                current_bb_width,
+                prev_bb_width,
+                current_price,
+                bb_middle_val,
+            )
+
+            confidence = 0.65
+            adx_change = abs(current_adx - prev_adx)
+            bb_width_change = abs(current_bb_width - prev_bb_width)
+
+            matches.append(
+                PatternMatch(
+                    pattern="regime_transition",
+                    pattern_name="Regime Transition",
+                    index=i,
+                    candles=30,
+                    signal=signal,
+                    confidence=confidence,
+                    description=f"Market transitioning to {transition_type} regime. ADX change: {adx_change:.2f}, BB width change: {bb_width_change * 100:.2f}%, Breaking out: {is_breaking_out}",
+                )
+            )
+
+    return matches
+
+
 def detect_all_patterns(
     data: list[dict], selected_patterns: list[str] | None = None
 ) -> list[PatternMatch]:
@@ -1145,6 +1852,11 @@ def detect_all_patterns(
         "wedge": detect_wedge,
         "rising_wedge": detect_wedge,
         "falling_wedge": detect_wedge,
+        # Regime Detection Patterns
+        "trending_regime": detect_trending_regime,
+        "ranging_regime": detect_ranging_regime,
+        "volatile_regime": detect_volatile_regime,
+        "regime_transition": detect_regime_transition,
     }
 
     # Only detect all patterns if selected_patterns is None (not provided)

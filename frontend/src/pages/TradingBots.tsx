@@ -108,6 +108,7 @@ const TradingBots: React.FC = () => {
     risk_per_trade: "2.00",
     stop_loss_percent: "",
     take_profit_percent: "",
+    period_days: "14",
     enabled_indicators: {} as Record<string, any>,
     enabled_patterns: {} as Record<string, any>,
     buy_rules: {} as Record<string, any>,
@@ -300,6 +301,7 @@ const TradingBots: React.FC = () => {
       if (botForm.take_profit_percent) {
         botData.take_profit_percent = parseFloat(botForm.take_profit_percent);
       }
+      botData.period_days = parseInt(botForm.period_days) || 14;
 
       botData.enabled_indicators = botForm.enabled_indicators || {};
       botData.enabled_patterns = botForm.enabled_patterns || {};
@@ -525,6 +527,7 @@ const TradingBots: React.FC = () => {
       risk_per_trade: "2.00",
       stop_loss_percent: "",
       take_profit_percent: "",
+      period_days: "14",
       enabled_indicators: {},
       enabled_patterns: {},
       buy_rules: {},
@@ -1005,6 +1008,29 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
             />
           </div>
 
+          {/* Analysis Period */}
+          <ThresholdInput
+            label="Analysis Period"
+            icon={LineChart}
+            value={botForm.period_days || "14"}
+            onChange={(value) =>
+              setBotForm({
+                ...botForm,
+                period_days: String(value),
+              })
+            }
+            type="number"
+            min={1}
+            max={365}
+            step={1}
+            tooltip={{
+              title: "Analysis Period",
+              description:
+                "Number of days to look back for indicators and patterns calculation",
+            }}
+            unit="days"
+          />
+
           {/* Budget Type */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -1348,8 +1374,8 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
           >
             <MLModelSelector
               models={mlModels}
-              selectedModels={botForm.enabled_ml_models}
-              modelWeights={botForm.ml_model_weights}
+              selectedModels={botForm.enabled_ml_models || []}
+              modelWeights={botForm.ml_model_weights || {}}
               onModelsChange={(models) =>
                 setBotForm({ ...botForm, enabled_ml_models: models })
               }
@@ -2136,6 +2162,16 @@ const BotOverviewTab: React.FC<{
               {new Date(bot.updated_at).toLocaleString()}
             </span>
           </div>
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0">
+            <span className="text-xs sm:text-sm text-gray-400">
+              Analysis Period
+            </span>
+            <span className="text-xs sm:text-sm text-white">
+              {bot.period_days
+                ? `${bot.period_days} days`
+                : "14 days (default)"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -2917,15 +2953,21 @@ const BotExecutionsTab: React.FC<{
                         <h4 className="text-sm sm:text-base text-white font-medium">
                           {execution.stock_symbol}
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-400 capitalize">
-                          {execution.action}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs sm:text-sm text-gray-400 capitalize">
+                            {execution.action}
+                          </p>
+                          <span className="text-xs text-gray-500">•</span>
+                          <p className="text-xs sm:text-sm text-gray-400">
+                            {new Date(execution.timestamp).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-left sm:text-right">
                         <p className="text-xs sm:text-sm text-gray-400">
-                          {new Date(execution.timestamp).toLocaleString()}
+                          {new Date(execution.timestamp).toLocaleTimeString()}
                         </p>
                         {execution.risk_score && (
                           <p
@@ -3239,12 +3281,313 @@ const ExecutionDetailsModal: React.FC<{
                 </p>
               </div>
             )}
+            {/* Prediction Preview */}
+            {stock.decision_details?.possible_gain !== undefined && (
+              <div>
+                <p className="text-xs text-gray-400">Possible Gain</p>
+                <p className="text-sm font-medium text-green-400">
+                  +{(stock.decision_details.possible_gain * 100).toFixed(1)}%
+                </p>
+              </div>
+            )}
+            {stock.decision_details?.gain_probability !== undefined && (
+              <div>
+                <p className="text-xs text-gray-400">Gain Probability</p>
+                <p className="text-sm font-medium text-green-400">
+                  {(stock.decision_details.gain_probability * 100).toFixed(1)}%
+                </p>
+              </div>
+            )}
           </div>
           <div className="mt-3">
             <p className="text-xs text-gray-400 mb-1">Reason</p>
             <p className="text-sm text-gray-300">{stock.reason}</p>
           </div>
         </div>
+
+        {/* Prediction Analysis */}
+        {stock.decision_details &&
+          (stock.decision_details.possible_gain !== undefined ||
+            stock.decision_details.possible_loss !== undefined ||
+            stock.decision_details.gain_probability !== undefined ||
+            stock.decision_details.timeframe_prediction ||
+            stock.decision_details.consequences) && (
+            <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+              <h4 className="text-lg font-semibold text-white mb-3">
+                Prediction Analysis
+              </h4>
+              <div className="space-y-4">
+                {/* Gain/Loss Predictions */}
+                {(stock.decision_details.possible_gain !== undefined ||
+                  stock.decision_details.possible_loss !== undefined) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {stock.decision_details.possible_gain !== undefined && (
+                      <div className="bg-green-900/30 border border-green-500/50 rounded p-3">
+                        <p className="text-xs text-gray-400 mb-1">
+                          Possible Gain
+                        </p>
+                        <p className="text-lg font-semibold text-green-400">
+                          +
+                          {(stock.decision_details.possible_gain * 100).toFixed(
+                            2
+                          )}
+                          %
+                        </p>
+                      </div>
+                    )}
+                    {stock.decision_details.possible_loss !== undefined && (
+                      <div className="bg-red-900/30 border border-red-500/50 rounded p-3">
+                        <p className="text-xs text-gray-400 mb-1">
+                          Possible Loss
+                        </p>
+                        <p className="text-lg font-semibold text-red-400">
+                          -
+                          {(stock.decision_details.possible_loss * 100).toFixed(
+                            2
+                          )}
+                          %
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Probabilities */}
+                {(stock.decision_details.gain_probability !== undefined ||
+                  stock.decision_details.loss_probability !== undefined) && (
+                  <div className="space-y-3">
+                    {stock.decision_details.gain_probability !== undefined && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-400">
+                            Gain Probability
+                          </span>
+                          <span className="text-sm text-green-400 font-medium">
+                            {(
+                              stock.decision_details.gain_probability * 100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-3">
+                          <div
+                            className="bg-green-500 h-3 rounded-full transition-all"
+                            style={{
+                              width: `${
+                                stock.decision_details.gain_probability * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {stock.decision_details.loss_probability !== undefined && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-400">
+                            Loss Probability
+                          </span>
+                          <span className="text-sm text-red-400 font-medium">
+                            {(
+                              stock.decision_details.loss_probability * 100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-3">
+                          <div
+                            className="bg-red-500 h-3 rounded-full transition-all"
+                            style={{
+                              width: `${
+                                stock.decision_details.loss_probability * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Timeframe Prediction */}
+                {stock.decision_details.timeframe_prediction && (
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <p className="text-sm text-gray-400 mb-2">
+                      Expected Timeframe
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {stock.decision_details.timeframe_prediction
+                        .min_timeframe && (
+                        <span className="text-sm text-gray-500">
+                          {
+                            stock.decision_details.timeframe_prediction
+                              .min_timeframe
+                          }
+                        </span>
+                      )}
+                      <span className="text-sm text-gray-400">-</span>
+                      {stock.decision_details.timeframe_prediction
+                        .max_timeframe && (
+                        <span className="text-sm text-gray-500">
+                          {
+                            stock.decision_details.timeframe_prediction
+                              .max_timeframe
+                          }
+                        </span>
+                      )}
+                      {stock.decision_details.timeframe_prediction
+                        .expected_timeframe && (
+                        <>
+                          <span className="text-sm text-gray-400">
+                            (Expected:
+                          </span>
+                          <span className="text-sm text-blue-400 font-medium">
+                            {
+                              stock.decision_details.timeframe_prediction
+                                .expected_timeframe
+                            }
+                          </span>
+                          <span className="text-sm text-gray-400">)</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Scenario Analysis */}
+                {stock.decision_details.consequences && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-400 mb-2">
+                      Scenario Analysis
+                    </p>
+                    {stock.decision_details.consequences.best_case && (
+                      <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-medium text-green-400">
+                            Best Case
+                          </span>
+                          {stock.decision_details.consequences.best_case
+                            .gain !== undefined && (
+                            <span className="text-sm text-green-400 font-medium">
+                              +
+                              {(
+                                stock.decision_details.consequences.best_case
+                                  .gain * 100
+                              ).toFixed(2)}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {stock.decision_details.consequences.best_case
+                          .probability !== undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              stock.decision_details.consequences.best_case
+                                .probability * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {stock.decision_details.consequences.best_case
+                          .timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {
+                              stock.decision_details.consequences.best_case
+                                .timeframe
+                            }
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {stock.decision_details.consequences.base_case && (
+                      <div className="bg-blue-900/20 border border-blue-500/30 rounded p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-medium text-blue-400">
+                            Base Case
+                          </span>
+                          {stock.decision_details.consequences.base_case
+                            .gain !== undefined && (
+                            <span className="text-sm text-blue-400 font-medium">
+                              +
+                              {(
+                                stock.decision_details.consequences.base_case
+                                  .gain * 100
+                              ).toFixed(2)}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {stock.decision_details.consequences.base_case
+                          .probability !== undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              stock.decision_details.consequences.base_case
+                                .probability * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {stock.decision_details.consequences.base_case
+                          .timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {
+                              stock.decision_details.consequences.base_case
+                                .timeframe
+                            }
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {stock.decision_details.consequences.worst_case && (
+                      <div className="bg-red-900/20 border border-red-500/30 rounded p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-medium text-red-400">
+                            Worst Case
+                          </span>
+                          {stock.decision_details.consequences.worst_case
+                            .loss !== undefined && (
+                            <span className="text-sm text-red-400 font-medium">
+                              -
+                              {(
+                                stock.decision_details.consequences.worst_case
+                                  .loss * 100
+                              ).toFixed(2)}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {stock.decision_details.consequences.worst_case
+                          .probability !== undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              stock.decision_details.consequences.worst_case
+                                .probability * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {stock.decision_details.consequences.worst_case
+                          .timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {
+                              stock.decision_details.consequences.worst_case
+                                .timeframe
+                            }
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         {/* Decision Details */}
         {stock.decision_details && (

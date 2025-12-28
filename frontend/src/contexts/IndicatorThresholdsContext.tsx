@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import {
   getDefaultIndicatorThresholds,
@@ -27,10 +27,24 @@ export const IndicatorThresholdsProvider: React.FC<
   const [thresholds, setThresholds] = useState<DefaultIndicatorThresholds>(
     DEFAULT_INDICATOR_THRESHOLDS
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchThresholds = async () => {
+  // Check authentication status directly from localStorage to avoid dependency on AuthContext
+  const isAuthenticated = () => {
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    return !!(token && user);
+  };
+
+  const fetchThresholds = useCallback(async () => {
+    // Only fetch if user is authenticated
+    if (!isAuthenticated()) {
+      setLoading(false);
+      setThresholds(DEFAULT_INDICATOR_THRESHOLDS);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -46,19 +60,40 @@ export const IndicatorThresholdsProvider: React.FC<
         // Use defaults if API returns empty
         setThresholds(DEFAULT_INDICATOR_THRESHOLDS);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch indicator thresholds:", err);
-      setError("Failed to load indicator thresholds");
-      // Fallback to defaults
-      setThresholds(DEFAULT_INDICATOR_THRESHOLDS);
+      // Handle 401 errors gracefully - user is not authenticated
+      if (err?.response?.status === 401) {
+        // User is not authenticated, just use defaults
+        setThresholds(DEFAULT_INDICATOR_THRESHOLDS);
+        setError(null);
+      } else {
+        setError("Failed to load indicator thresholds");
+        // Fallback to defaults
+        setThresholds(DEFAULT_INDICATOR_THRESHOLDS);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    // Check authentication and fetch thresholds on mount
     fetchThresholds();
-  }, []);
+
+    // Listen for storage changes (for cross-tab login/logout)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'token' || e.key === 'user') {
+        fetchThresholds();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [fetchThresholds]);
 
   return (
     <IndicatorThresholdsContext.Provider

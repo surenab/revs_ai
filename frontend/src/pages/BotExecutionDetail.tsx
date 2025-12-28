@@ -32,10 +32,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import toast from "react-hot-toast";
-import { botAPI, stockAPI } from "../lib/api";
-import type { TradingBotExecution, StockPrice } from "../lib/api";
+import { botAPI } from "../lib/api";
+import type { TradingBotExecution } from "../lib/api";
+import BotSignalHistoryTab from "../components/bots/BotSignalHistoryTab";
 import {
   INDICATORS,
   getIndicatorThresholds,
@@ -217,8 +218,10 @@ const BotExecutionDetail: React.FC = () => {
   const [execution, setExecution] = useState<TradingBotExecution | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
-  const [priceChartData, setPriceChartData] = useState<StockPrice[]>([]);
   const [isLoadingPriceData, setIsLoadingPriceData] = useState(false);
+  const [activeTab, setActiveTab] = useState<"timeline" | "signals">(
+    "timeline"
+  );
 
   useEffect(() => {
     if (id) {
@@ -231,46 +234,12 @@ const BotExecutionDetail: React.FC = () => {
       setLoading(true);
       const response = await botAPI.getExecutionDetail(id!);
       setExecution(response.data);
-
-      // Fetch price data for chart if execution has stock symbol
-      if (response.data?.stock_symbol) {
-        fetchPriceDataForChart(
-          response.data.stock_symbol,
-          response.data.timestamp
-        );
-      }
     } catch (error) {
       console.error("Failed to fetch execution:", error);
       toast.error("Failed to load execution details");
       navigate("/bots");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchPriceDataForChart = async (
-    stockSymbol: string,
-    executionTimestamp: string
-  ) => {
-    try {
-      setIsLoadingPriceData(true);
-      const executionDate = new Date(executionTimestamp);
-      const endDate = executionDate;
-      const startDate = subDays(endDate, 200); // Last 200 days before execution
-
-      const response = await stockAPI.getTimeSeries(stockSymbol, {
-        interval: "1d",
-        start_date: format(startDate, "yyyy-MM-dd"),
-        end_date: format(endDate, "yyyy-MM-dd"),
-        limit: 200,
-      });
-
-      setPriceChartData(response.data.prices || []);
-    } catch (error) {
-      console.error("Failed to fetch price data for chart:", error);
-      setPriceChartData([]);
-    } finally {
-      setIsLoadingPriceData(false);
     }
   };
 
@@ -358,14 +327,24 @@ const BotExecutionDetail: React.FC = () => {
 
     // Step 2: Price Data Retrieved
     if (signalHistory?.price_data_snapshot) {
-      const chartData = priceChartData.map((price) => ({
-        date: format(new Date(price.date), "MMM dd"),
-        fullDate: price.date,
-        close: parseFloat(String(price.close_price)),
-        open: parseFloat(String(price.open_price)),
-        high: parseFloat(String(price.high_price)),
-        low: parseFloat(String(price.low_price)),
-        volume: price.volume,
+      // Use exact price data from snapshot (the data used during execution)
+      const snapshotPriceData = signalHistory.price_data_snapshot.data || [];
+
+      // Sort chronologically (oldest to newest) by date
+      const sortedPriceData = [...snapshotPriceData].sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        return dateA - dateB;
+      });
+
+      const chartData = sortedPriceData.map((price) => ({
+        date: price.date ? format(new Date(price.date), "MMM dd") : "N/A",
+        fullDate: price.date || "",
+        close: parseFloat(String(price.close_price || 0)),
+        open: parseFloat(String(price.open_price || 0)),
+        high: parseFloat(String(price.high_price || 0)),
+        low: parseFloat(String(price.low_price || 0)),
+        volume: price.volume || 0,
       }));
 
       steps.push({
@@ -411,14 +390,16 @@ const BotExecutionDetail: React.FC = () => {
             )}
 
             {/* Price Chart */}
-            {isLoadingPriceData ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-600 border-t-blue-500"></div>
-              </div>
-            ) : chartData.length > 0 ? (
+            {chartData.length > 0 ? (
               <div className="mt-4">
                 <h4 className="text-sm font-semibold text-white mb-2">
-                  Price Chart (Last 200 Days)
+                  Price Chart (Exact Data Used for Execution -{" "}
+                  {chartData.length} points)
+                  {execution?.bot_config_settings?.period_days && (
+                    <span className="text-gray-400 text-xs ml-2">
+                      (Period: {execution.bot_config_settings.period_days} days)
+                    </span>
+                  )}
                 </h4>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart
@@ -482,7 +463,7 @@ const BotExecutionDetail: React.FC = () => {
               </div>
             ) : (
               <div className="text-sm text-gray-400 text-center py-4">
-                No price data available for chart
+                No price data available in snapshot
               </div>
             )}
           </div>
@@ -1609,6 +1590,247 @@ const BotExecutionDetail: React.FC = () => {
               </p>
             </div>
 
+            {/* Prediction Analysis Section */}
+            {(aggSignal.possible_gain !== undefined ||
+              aggSignal.possible_loss !== undefined ||
+              aggSignal.gain_probability !== undefined ||
+              aggSignal.timeframe_prediction) && (
+              <div className="bg-gray-700/50 rounded p-3 border border-gray-600 space-y-3">
+                <p className="text-xs font-semibold text-gray-300 mb-2">
+                  Prediction Analysis
+                </p>
+
+                {/* Gain/Loss Predictions */}
+                {(aggSignal.possible_gain !== undefined ||
+                  aggSignal.possible_loss !== undefined) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {aggSignal.possible_gain !== undefined && (
+                      <div className="bg-green-900/30 border border-green-500/50 rounded p-2">
+                        <p className="text-xs text-gray-400 mb-1">
+                          Possible Gain
+                        </p>
+                        <p className="text-sm font-medium text-green-400">
+                          +{aggSignal.possible_gain.toFixed(2)}%
+                        </p>
+                      </div>
+                    )}
+                    {aggSignal.possible_loss !== undefined && (
+                      <div className="bg-red-900/30 border border-red-500/50 rounded p-2">
+                        <p className="text-xs text-gray-400 mb-1">
+                          Possible Loss
+                        </p>
+                        <p className="text-sm font-medium text-red-400">
+                          -{aggSignal.possible_loss.toFixed(2)}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Probabilities */}
+                {(aggSignal.gain_probability !== undefined ||
+                  aggSignal.loss_probability !== undefined) && (
+                  <div className="space-y-2">
+                    {aggSignal.gain_probability !== undefined && (
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-gray-400">
+                            Gain Probability
+                          </span>
+                          <span className="text-xs text-green-400 font-medium">
+                            {(aggSignal.gain_probability * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-2">
+                          <div
+                            className="bg-green-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${aggSignal.gain_probability * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {aggSignal.loss_probability !== undefined && (
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-gray-400">
+                            Loss Probability
+                          </span>
+                          <span className="text-xs text-red-400 font-medium">
+                            {(aggSignal.loss_probability * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-2">
+                          <div
+                            className="bg-red-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${aggSignal.loss_probability * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Timeframe Prediction */}
+                {aggSignal.timeframe_prediction && (
+                  <div className="bg-gray-800/50 rounded p-2">
+                    <p className="text-xs text-gray-400 mb-2">
+                      Expected Timeframe
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {aggSignal.timeframe_prediction.min_timeframe && (
+                        <span className="text-xs text-gray-500">
+                          {aggSignal.timeframe_prediction.min_timeframe}
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">-</span>
+                      {aggSignal.timeframe_prediction.max_timeframe && (
+                        <span className="text-xs text-gray-500">
+                          {aggSignal.timeframe_prediction.max_timeframe}
+                        </span>
+                      )}
+                      {aggSignal.timeframe_prediction.expected_timeframe && (
+                        <>
+                          <span className="text-xs text-gray-400">
+                            (Expected:
+                          </span>
+                          <span className="text-xs text-blue-400 font-medium">
+                            {aggSignal.timeframe_prediction.expected_timeframe}
+                          </span>
+                          <span className="text-xs text-gray-400">)</span>
+                        </>
+                      )}
+                    </div>
+                    {aggSignal.timeframe_prediction.timeframe_confidence !==
+                      undefined && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Confidence:{" "}
+                        {(
+                          aggSignal.timeframe_prediction.timeframe_confidence *
+                          100
+                        ).toFixed(1)}
+                        %
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Scenario Analysis */}
+                {aggSignal.consequences && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-400 mb-2">
+                      Scenario Analysis
+                    </p>
+                    {aggSignal.consequences.best_case && (
+                      <div className="bg-green-900/20 border border-green-500/30 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium text-green-400">
+                            Best Case
+                          </span>
+                          {aggSignal.consequences.best_case.gain !==
+                            undefined && (
+                            <span className="text-xs text-green-400 font-medium">
+                              +
+                              {aggSignal.consequences.best_case.gain.toFixed(2)}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {aggSignal.consequences.best_case.probability !==
+                          undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              aggSignal.consequences.best_case.probability * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {aggSignal.consequences.best_case.timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {aggSignal.consequences.best_case.timeframe}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {aggSignal.consequences.base_case && (
+                      <div className="bg-blue-900/20 border border-blue-500/30 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium text-blue-400">
+                            Base Case
+                          </span>
+                          {aggSignal.consequences.base_case.gain !==
+                            undefined && (
+                            <span className="text-xs text-blue-400 font-medium">
+                              +
+                              {aggSignal.consequences.base_case.gain.toFixed(2)}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {aggSignal.consequences.base_case.probability !==
+                          undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              aggSignal.consequences.base_case.probability * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {aggSignal.consequences.base_case.timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {aggSignal.consequences.base_case.timeframe}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {aggSignal.consequences.worst_case && (
+                      <div className="bg-red-900/20 border border-red-500/30 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium text-red-400">
+                            Worst Case
+                          </span>
+                          {aggSignal.consequences.worst_case.loss !==
+                            undefined && (
+                            <span className="text-xs text-red-400 font-medium">
+                              -
+                              {aggSignal.consequences.worst_case.loss.toFixed(
+                                2
+                              )}
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {aggSignal.consequences.worst_case.probability !==
+                          undefined && (
+                          <p className="text-xs text-gray-400">
+                            Probability:{" "}
+                            {(
+                              aggSignal.consequences.worst_case.probability *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        )}
+                        {aggSignal.consequences.worst_case.timeframe && (
+                          <p className="text-xs text-gray-400">
+                            Timeframe:{" "}
+                            {aggSignal.consequences.worst_case.timeframe}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Detailed Signal Contribution Breakdown */}
             <div className="bg-gray-700/50 rounded p-3 border border-gray-600">
               <p className="text-xs font-semibold text-gray-300 mb-3">
@@ -2256,11 +2478,22 @@ const BotExecutionDetail: React.FC = () => {
                             className="bg-gray-800/50 rounded p-2 border border-gray-700"
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-medium text-white">
-                                {signal.pattern_name ||
-                                  signal.pattern ||
-                                  `Pattern ${idx + 1}`}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-white">
+                                  {signal.pattern_name ||
+                                    signal.pattern ||
+                                    `Pattern ${idx + 1}`}
+                                </span>
+                                {/* Regime pattern indicator */}
+                                {(signal.pattern === "trending_regime" ||
+                                  signal.pattern === "ranging_regime" ||
+                                  signal.pattern === "volatile_regime" ||
+                                  signal.pattern === "regime_transition") && (
+                                  <span className="text-xs px-1.5 py-0.5 bg-blue-900/30 text-blue-300 rounded">
+                                    Regime
+                                  </span>
+                                )}
+                              </div>
                               <span
                                 className={`text-xs px-2 py-0.5 rounded capitalize ${
                                   action === "bullish" || action === "buy"
@@ -2326,6 +2559,21 @@ const BotExecutionDetail: React.FC = () => {
                                   </FormulaTooltip>
                                 </div>
                               </div>
+                              {/* Regime pattern metadata */}
+                              {(signal.pattern === "trending_regime" ||
+                                signal.pattern === "ranging_regime" ||
+                                signal.pattern === "volatile_regime" ||
+                                signal.pattern === "regime_transition") &&
+                                signal.description && (
+                                  <div className="pt-2 border-t border-gray-600">
+                                    <p className="text-xs text-gray-400 mb-1">
+                                      Regime Characteristics:
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      {signal.description}
+                                    </p>
+                                  </div>
+                                )}
                               <div className="pt-2 border-t border-gray-600">
                                 <p className="text-xs text-gray-500">
                                   <span className="text-gray-400">
@@ -2348,30 +2596,141 @@ const BotExecutionDetail: React.FC = () => {
                 );
               })()}
 
-              {/* ML Signals */}
-              {signalHistory.ml_signals &&
-                Array.isArray(signalHistory.ml_signals) &&
-                signalHistory.ml_signals.length > 0 && (
+              {/* ML Signals - Enhanced for Transformer Models */}
+              {(() => {
+                const mlSignals = signalHistory.ml_signals?.predictions
+                  ? signalHistory.ml_signals.predictions
+                  : Array.isArray(signalHistory.ml_signals)
+                  ? signalHistory.ml_signals
+                  : [];
+
+                if (mlSignals.length === 0) return null;
+
+                return (
                   <div className="mb-3">
                     <p className="text-xs text-gray-400 mb-2 font-medium">
-                      ML Signals ({signalHistory.ml_signals.length})
+                      ML Signals ({mlSignals.length})
                     </p>
-                    <div className="space-y-1">
-                      {signalHistory.ml_signals.map(
-                        (signal: any, idx: number) => (
+                    <div className="space-y-2">
+                      {mlSignals.map((signal: any, idx: number) => {
+                        const isTransformer =
+                          signal.metadata?.model_type?.includes("Transformer") ||
+                          signal.model_name?.includes("Transformer") ||
+                          signal.model_name?.includes("PatchTST") ||
+                          signal.model_name?.includes("Informer") ||
+                          signal.model_name?.includes("Autoformer") ||
+                          signal.metadata?.model_type === "Transformer+RL";
+
+                        return (
                           <div
                             key={idx}
-                            className="text-xs text-gray-300 bg-gray-800/50 rounded p-2"
+                            className="bg-gray-800/50 rounded p-2 border border-gray-700"
                           >
-                            {signal.model_name || `Model ${idx + 1}`}:{" "}
-                            <span className="capitalize">{signal.action}</span>{" "}
-                            ({(signal.confidence * 100).toFixed(1)}%)
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Brain className="w-4 h-4 text-purple-400" />
+                                <span className="text-xs font-medium text-white">
+                                  {signal.model_name || `Model ${idx + 1}`}
+                                </span>
+                                {isTransformer && (
+                                  <span className="text-xs px-1.5 py-0.5 bg-purple-900/30 text-purple-300 rounded">
+                                    Transformer
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded capitalize ${
+                                  signal.action === "buy"
+                                    ? "bg-green-900/30 text-green-300"
+                                    : signal.action === "sell"
+                                    ? "bg-red-900/30 text-red-300"
+                                    : "bg-gray-700 text-gray-300"
+                                }`}
+                              >
+                                {signal.action}
+                              </span>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-400">Confidence:</span>
+                                  <span className="text-white font-medium">
+                                    {((signal.confidence || 0) * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                                {signal.predicted_gain !== undefined && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Pred. Gain:</span>
+                                    <span className="text-green-400 font-medium">
+                                      +{((signal.predicted_gain || 0) * 100).toFixed(2)}%
+                                    </span>
+                                  </div>
+                                )}
+                                {signal.predicted_loss !== undefined && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Pred. Loss:</span>
+                                    <span className="text-red-400 font-medium">
+                                      -{((signal.predicted_loss || 0) * 100).toFixed(2)}%
+                                    </span>
+                                  </div>
+                                )}
+                                {signal.gain_probability !== undefined && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Gain Prob:</span>
+                                    <span className="text-white font-medium">
+                                      {((signal.gain_probability || 0) * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Transformer-specific metadata */}
+                              {isTransformer && signal.metadata && (
+                                <div className="pt-2 border-t border-gray-600 space-y-1">
+                                  <p className="text-xs text-gray-400 font-medium">
+                                    Model Details:
+                                  </p>
+                                  {signal.metadata.sequence_length && (
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">Sequence Length:</span>
+                                      <span className="text-gray-300">
+                                        {signal.metadata.sequence_length}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {signal.metadata.prediction_horizon && (
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">Prediction Horizon:</span>
+                                      <span className="text-gray-300">
+                                        {signal.metadata.prediction_horizon} days
+                                      </span>
+                                    </div>
+                                  )}
+                                  {signal.metadata.rl_algorithm && (
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">RL Algorithm:</span>
+                                      <span className="text-gray-300">
+                                        {signal.metadata.rl_algorithm.toUpperCase()}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {signal.metadata.use_dummy !== undefined && (
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">Mode:</span>
+                                      <span className="text-yellow-400">
+                                        {signal.metadata.use_dummy ? "Dummy" : "Trained"}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
-                )}
+                );
+              })()}
             </div>
 
             {/* Social Media Signal - only show if enabled and has valid data */}
@@ -3235,83 +3594,122 @@ const BotExecutionDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* Timeline */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-            <Clock className="w-6 h-6" />
-            Execution Timeline
-          </h2>
-
-          <div className="relative">
-            {/* Timeline Line */}
-            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-700"></div>
-
-            {/* Timeline Steps */}
-            <div className="space-y-8">
-              {timeline.map((step, index) => (
-                <motion.div
-                  key={step.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="relative flex gap-4"
-                >
-                  {/* Timeline Dot */}
-                  <div className="relative z-10 flex-shrink-0">
-                    <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
-                        step.status === "completed"
-                          ? "bg-green-500/20 border-green-500 text-green-400"
-                          : step.status === "error"
-                          ? "bg-red-500/20 border-red-500 text-red-400"
-                          : "bg-gray-500/20 border-gray-500 text-gray-400"
-                      }`}
-                    >
-                      {step.icon}
-                    </div>
-                  </div>
-
-                  {/* Step Content */}
-                  <div className="flex-1 bg-gray-700/50 rounded-lg border border-gray-600 p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-lg font-semibold text-white">
-                            {step.title}
-                          </h3>
-                          {step.timestamp && (
-                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                              <Clock className="w-3 h-3" />
-                              <span className="font-mono">
-                                {formatDate(step.timestamp)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-400">
-                          {step.description}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                        {step.status === "completed" && (
-                          <CheckCircle className="w-5 h-5 text-green-400" />
-                        )}
-                        {step.status === "error" && (
-                          <X className="w-5 h-5 text-red-400" />
-                        )}
-                      </div>
-                    </div>
-                    {step.details && (
-                      <div className="mt-3 border-t border-gray-600 pt-3">
-                        {step.details}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+        {/* Tabs */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 mb-6">
+          <div className="flex border-b border-gray-700">
+            <button
+              onClick={() => setActiveTab("timeline")}
+              className={`px-6 py-3 font-semibold transition-colors ${
+                activeTab === "timeline"
+                  ? "text-blue-400 border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-gray-300"
+              }`}
+            >
+              Timeline
+            </button>
+            <button
+              onClick={() => setActiveTab("signals")}
+              className={`px-6 py-3 font-semibold transition-colors ${
+                activeTab === "signals"
+                  ? "text-blue-400 border-b-2 border-blue-400"
+                  : "text-gray-400 hover:text-gray-300"
+              }`}
+            >
+              All Signals
+            </button>
           </div>
         </div>
+
+        {/* Timeline Tab */}
+        {activeTab === "timeline" && (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+              <Clock className="w-6 h-6" />
+              Execution Timeline
+            </h2>
+
+            <div className="relative">
+              {/* Timeline Line */}
+              <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-700"></div>
+
+              {/* Timeline Steps */}
+              <div className="space-y-8">
+                {timeline.map((step, index) => (
+                  <motion.div
+                    key={step.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="relative flex gap-4"
+                  >
+                    {/* Timeline Dot */}
+                    <div className="relative z-10 flex-shrink-0">
+                      <div
+                        className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
+                          step.status === "completed"
+                            ? "bg-green-500/20 border-green-500 text-green-400"
+                            : step.status === "error"
+                            ? "bg-red-500/20 border-red-500 text-red-400"
+                            : "bg-gray-500/20 border-gray-500 text-gray-400"
+                        }`}
+                      >
+                        {step.icon}
+                      </div>
+                    </div>
+
+                    {/* Step Content */}
+                    <div className="flex-1 bg-gray-700/50 rounded-lg border border-gray-600 p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-1">
+                            <h3 className="text-lg font-semibold text-white">
+                              {step.title}
+                            </h3>
+                            {step.timestamp && (
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <Clock className="w-3 h-3" />
+                                <span className="font-mono">
+                                  {formatDate(step.timestamp)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-400">
+                            {step.description}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                          {step.status === "completed" && (
+                            <CheckCircle className="w-5 h-5 text-green-400" />
+                          )}
+                          {step.status === "error" && (
+                            <X className="w-5 h-5 text-red-400" />
+                          )}
+                        </div>
+                      </div>
+                      {step.details && (
+                        <div className="mt-3 border-t border-gray-600 pt-3">
+                          {step.details}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Signals Tab */}
+        {activeTab === "signals" && execution && (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+              <GitMerge className="w-6 h-6" />
+              All Signal Histories
+            </h2>
+            <BotSignalHistoryTab botId={execution.bot_config} />
+          </div>
+        )}
       </div>
     </div>
   );

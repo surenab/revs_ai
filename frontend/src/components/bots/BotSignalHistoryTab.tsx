@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Clock,
-  Brain,
-  MessageSquare,
-  Newspaper,
-  GitMerge,
   CheckCircle,
   X,
-  ChevronDown,
-  ChevronUp,
+  Square,
   Filter,
   Download,
 } from "lucide-react";
@@ -21,11 +17,9 @@ interface BotSignalHistoryTabProps {
 }
 
 const BotSignalHistoryTab: React.FC<BotSignalHistoryTabProps> = ({ botId }) => {
+  const navigate = useNavigate();
   const [signals, setSignals] = useState<BotSignalHistory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedSignals, setExpandedSignals] = useState<Set<string>>(
-    new Set()
-  );
   const [filters, setFilters] = useState({
     stock_symbol: "",
     decision: "",
@@ -58,15 +52,6 @@ const BotSignalHistoryTab: React.FC<BotSignalHistoryTabProps> = ({ botId }) => {
     }
   };
 
-  const toggleExpand = (signalId: string) => {
-    const newExpanded = new Set(expandedSignals);
-    if (newExpanded.has(signalId)) {
-      newExpanded.delete(signalId);
-    } else {
-      newExpanded.add(signalId);
-    }
-    setExpandedSignals(newExpanded);
-  };
 
   const exportToCSV = () => {
     const headers = [
@@ -200,16 +185,12 @@ const BotSignalHistoryTab: React.FC<BotSignalHistoryTabProps> = ({ botId }) => {
           </div>
         ) : (
           signals.map((signal) => {
-            const isExpanded = expandedSignals.has(signal.id);
             return (
               <div
                 key={signal.id}
                 className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden"
               >
-                <button
-                  onClick={() => toggleExpand(signal.id)}
-                  className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
-                >
+                <div className="w-full p-4 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     {getDecisionIcon(signal.final_decision)}
                     <div className="text-left">
@@ -234,162 +215,69 @@ const BotSignalHistoryTab: React.FC<BotSignalHistoryTabProps> = ({ botId }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    {signal.decision_confidence !== undefined && (
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">Confidence</p>
-                        <p className="text-sm font-semibold text-white">
-                          {(signal.decision_confidence / 100).toFixed(2)}
-                        </p>
-                      </div>
-                    )}
-                    {signal.risk_score !== undefined && (
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">Risk Score</p>
-                        <p className="text-sm font-semibold text-white">
-                          {signal.risk_score.toFixed(1)}
-                        </p>
-                      </div>
-                    )}
-                    {isExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    {signal.decision_confidence !== undefined &&
+                      signal.decision_confidence !== null && (
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400">Confidence</p>
+                          <p className="text-sm font-semibold text-white">
+                            {(() => {
+                              const confidence =
+                                typeof signal.decision_confidence === "number"
+                                  ? signal.decision_confidence
+                                  : Number(signal.decision_confidence);
+                              return !isNaN(confidence)
+                                ? (confidence / 100).toFixed(2)
+                                : "N/A";
+                            })()}
+                          </p>
+                        </div>
+                      )}
+                    {signal.risk_score !== undefined &&
+                      signal.risk_score !== null && (
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400">Risk Score</p>
+                          <p className="text-sm font-semibold text-white">
+                            {(() => {
+                              const riskScore =
+                                typeof signal.risk_score === "number"
+                                  ? signal.risk_score
+                                  : Number(signal.risk_score);
+                              return !isNaN(riskScore)
+                                ? riskScore.toFixed(1)
+                                : "N/A";
+                            })()}
+                          </p>
+                        </div>
+                      )}
+                    {/* Prediction Preview */}
+                    {signal.aggregated_signal &&
+                      (signal.aggregated_signal as Record<string, any>)
+                        .possible_gain !== undefined && (
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400">Possible Gain</p>
+                          <p className="text-sm font-semibold text-green-400">
+                            +
+                            {(
+                              (signal.aggregated_signal as Record<string, any>)
+                                .possible_gain * 100
+                            ).toFixed(1)}
+                            %
+                          </p>
+                        </div>
+                      )}
+                    {signal.execution ? (
+                      <button
+                        onClick={() => navigate(`/executions/${signal.execution}`)}
+                        className="p-2 hover:bg-gray-700 rounded transition-colors"
+                        title="Open bot execution"
+                      >
+                        <Square className="w-5 h-5 text-blue-400 hover:text-blue-300" />
+                      </button>
                     ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                      <div className="w-5 h-5" /> // Spacer to maintain layout
                     )}
                   </div>
-                </button>
-
-                {isExpanded && (
-                  <div className="border-t border-gray-700 p-4 space-y-4">
-                    {/* ML Signals */}
-                    {signal.ml_signals?.predictions && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Brain className="w-4 h-4 text-blue-400" />
-                          <h4 className="text-sm font-semibold text-white">
-                            ML Model Predictions
-                          </h4>
-                        </div>
-                        <div className="space-y-2">
-                          {signal.ml_signals.predictions.map(
-                            (pred: Record<string, unknown>, idx: number) => (
-                              <div
-                                key={idx}
-                                className="bg-gray-700 rounded p-2 text-sm text-gray-300"
-                              >
-                                <span className="font-medium">
-                                  {pred.model_name as string}:
-                                </span>{" "}
-                                {pred.action as string} (confidence:{" "}
-                                {((pred.confidence as number) * 100).toFixed(1)}
-                                %)
-                              </div>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Social Signals */}
-                    {signal.social_signals &&
-                      Object.keys(signal.social_signals).length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <MessageSquare className="w-4 h-4 text-blue-400" />
-                            <h4 className="text-sm font-semibold text-white">
-                              Social Media
-                            </h4>
-                          </div>
-                          <div className="bg-gray-700 rounded p-2 text-sm text-gray-300">
-                            Sentiment:{" "}
-                            {(signal.social_signals as Record<string, unknown>)
-                              .sentiment_score
-                              ? (
-                                  (
-                                    signal.social_signals as Record<
-                                      string,
-                                      unknown
-                                    >
-                                  ).sentiment_score as number
-                                ).toFixed(2)
-                              : "N/A"}
-                            {(signal.social_signals as Record<string, unknown>)
-                              .volume && (
-                              <>
-                                {" "}
-                                | Volume:{" "}
-                                {
-                                  (
-                                    signal.social_signals as Record<
-                                      string,
-                                      unknown
-                                    >
-                                  ).volume as number
-                                }
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                    {/* News Signals */}
-                    {signal.news_signals &&
-                      Object.keys(signal.news_signals).length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Newspaper className="w-4 h-4 text-blue-400" />
-                            <h4 className="text-sm font-semibold text-white">
-                              News
-                            </h4>
-                          </div>
-                          <div className="bg-gray-700 rounded p-2 text-sm text-gray-300">
-                            Sentiment:{" "}
-                            {(signal.news_signals as Record<string, unknown>)
-                              .sentiment_score
-                              ? (
-                                  (
-                                    signal.news_signals as Record<
-                                      string,
-                                      unknown
-                                    >
-                                  ).sentiment_score as number
-                                ).toFixed(2)
-                              : "N/A"}
-                            {(signal.news_signals as Record<string, unknown>)
-                              .impact_score && (
-                              <>
-                                {" "}
-                                | Impact:{" "}
-                                {(
-                                  (
-                                    signal.news_signals as Record<
-                                      string,
-                                      unknown
-                                    >
-                                  ).impact_score as number
-                                ).toFixed(2)}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                    {/* Aggregated Signal */}
-                    {signal.aggregated_signal && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <GitMerge className="w-4 h-4 text-blue-400" />
-                          <h4 className="text-sm font-semibold text-white">
-                            Aggregated Signal
-                          </h4>
-                        </div>
-                        <div className="bg-gray-700 rounded p-2 text-sm text-gray-300">
-                          {(signal.aggregated_signal as Record<string, unknown>)
-                            .reason || "No reason provided"}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                </div>
               </div>
             );
           })

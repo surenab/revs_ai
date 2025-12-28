@@ -572,6 +572,7 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
         "assigned_stocks_count",
         "max_daily_trades",
         "risk_per_trade",
+        "period_days",
         "created_at",
     ]
     list_filter = [

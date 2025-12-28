@@ -44,6 +44,10 @@ class BaseMLModel(ABC):
                 - confidence: float (0-1)
                 - predicted_gain: float (percentage or absolute)
                 - predicted_loss: float (percentage or absolute)
+                - gain_probability: float (0-1, probability that gain will occur)
+                - loss_probability: float (0-1, probability that loss will occur)
+                - timeframe_prediction: dict with min_timeframe, max_timeframe, expected_timeframe, timeframe_confidence
+                - consequences: dict with best_case, base_case, worst_case scenarios
                 - metadata: dict with additional info
         """
 
