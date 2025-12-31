@@ -898,8 +898,8 @@ export const notificationAPI = {
 
 export const botAPI = {
   // Get user's trading bots
-  getBots: (): Promise<AxiosResponse<{ count: number; results: TradingBotConfig[] } | TradingBotConfig[]>> =>
-    api.get('/stocks/bots/'),
+  getBots: (params?: { page?: number; page_size?: number }): Promise<AxiosResponse<{ count: number; next: string | null; previous: string | null; results: TradingBotConfig[] } | TradingBotConfig[]>> =>
+    api.get('/stocks/bots/', { params }),
 
   // Create trading bot
   createBot: (data: BotCreateRequest): Promise<AxiosResponse<TradingBotConfig>> =>

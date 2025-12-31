@@ -103,7 +103,7 @@ class DayExecutor:
                     or day_idx == 0
                     or day_idx == len(dates_in_range) - 1
                 ):
-                    logger.info(
+                    logger.debug(
                         f"  Processing day {day_idx + 1}/{len(dates_in_range)}: {day_date}"
                     )
                 day_result = self.execute_day(day_date)
@@ -919,7 +919,7 @@ class DayExecutor:
                     self.bot_sim_config.status = "running"
                     self.bot_sim_config.save()
 
-                logger.info(
+                logger.debug(
                     f"  Processing day {day_idx + 1}/{len(dates_in_range)}: {day_date}"
                 )
 

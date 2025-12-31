@@ -49,13 +49,6 @@ class SignalPersistenceTracker:
             dict[str, Any]
         ] = []  # History of signals during persistence period
 
-        if self.enabled:
-            logger.info(
-                f"Signal persistence enabled: {persistence_type} = {persistence_value}"
-            )
-        else:
-            logger.debug("Signal persistence disabled")
-
     def check_signal(
         self, signal_action: str, timestamp: datetime | None = None
     ) -> dict[str, Any]:

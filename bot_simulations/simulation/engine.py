@@ -19,7 +19,11 @@ from stocks.models import Stock, StockTick, TradingBotConfig
 
 from .data_splitter import DataSplitter
 from .day_executor import DayExecutor
-from .parameter_generator import ParameterGenerator
+from .parameter_generator import (
+    INDICATOR_GROUPS,
+    PATTERN_GROUPS,
+    ParameterGenerator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -250,9 +254,6 @@ class SimulationEngine:
                 simulation_run=self.simulation_run
             ).count()
             if existing_count > 0:
-                logger.info(
-                    f"Clearing {existing_count} existing bot configs for fresh run"
-                )
                 BotSimulationConfig.objects.filter(
                     simulation_run=self.simulation_run
                 ).delete()
@@ -313,9 +314,6 @@ class SimulationEngine:
                             )
 
                     created_configs.append(sim_config)
-                    logger.info(
-                        f"Successfully recovered bot config {config_data['bot_index']} after IntegrityError"
-                    )
                 except BotSimulationConfig.DoesNotExist:
                     # If we still can't get it, this is a serious issue
                     logger.exception(
@@ -389,16 +387,9 @@ class SimulationEngine:
             # Check for pause/stop signals
             self.simulation_run.refresh_from_db()
             if self.simulation_run.status == "paused":
-                logger.info("Simulation paused by user")
                 return {"status": "paused", "bots_completed": batch_start}
             if self.simulation_run.status == "cancelled":
-                logger.info("Simulation cancelled by user")
                 return {"status": "cancelled", "bots_completed": batch_start}
-
-            logger.info(
-                f"Processing batch {batch_start // batch_size + 1}: "
-                f"bots {batch_start + 1}-{batch_end} of {total_bots}"
-            )
 
             # Create Celery task group for parallel execution
             if use_celery:
@@ -540,17 +531,11 @@ class SimulationEngine:
             # Check for pause/stop signals
             self.simulation_run.refresh_from_db()
             if self.simulation_run.status == "paused":
-                logger.info("Simulation paused by user")
                 return {"status": "paused", "bots_completed": idx}
             if self.simulation_run.status == "cancelled":
-                logger.info("Simulation cancelled by user")
                 return {"status": "cancelled", "bots_completed": idx}
 
             try:
-                logger.info(
-                    f"Executing bot {idx + 1}/{total_bots} (index {bot_sim_config.bot_index})"
-                )
-
                 # Track bot execution start time
                 bot_start_time = timezone.now()
 
@@ -577,13 +562,6 @@ class SimulationEngine:
                         f"Execution dates not set, using execution period: {execution_start_date} to {execution_end_date}"
                     )
 
-                logger.info(
-                    f"Executing bot {bot_sim_config.bot_index} from {execution_start_date} to {execution_end_date}"
-                )
-                logger.info(
-                    f"  Bot {bot_sim_config.bot_index} assigned stocks: {[s.symbol for s in assigned_stocks]}"
-                )
-
                 # Combine historical + execution data so bot can see full history for analysis
                 # Historical data is used for analysis context, execution data for actual trading
                 combined_historical_data = {}
@@ -596,20 +574,6 @@ class SimulationEngine:
                     # Sort by timestamp
                     all_ticks.sort(key=lambda t: t.get("timestamp", ""))
                     combined_historical_data[symbol] = all_ticks
-
-                historical_data_points = sum(
-                    len(data) for data in combined_historical_data.values()
-                )
-                logger.info(
-                    f"  Historical data loaded: {historical_data_points} total ticks across {len(combined_historical_data)} stock(s) "
-                    f"(for bot analysis context)"
-                )
-
-                # Execute day-by-day: Each day starts fresh with initial cash
-                # Bot does NOT run before execution_start_date
-                logger.info(
-                    f"  Starting daily execution from {execution_start_date} to {execution_end_date}"
-                )
 
                 # Determine initial state based on simulation type
                 initial_cash = Decimal(str(self.simulation_run.initial_fund))
@@ -639,10 +603,6 @@ class SimulationEngine:
                     execution_start_date=execution_start_date,
                     execution_end_date=execution_end_date,
                 )
-                logger.info(
-                    f"  Execution completed: {execution_result['days_executed']}/{execution_result['total_days']} days processed, "
-                    f"{execution_result['total_trades']} total trades executed"
-                )
 
                 # Store daily results
                 daily_results = execution_result.get("daily_results", [])
@@ -650,10 +610,6 @@ class SimulationEngine:
                     bot_sim_config, daily_results, phase="execution"
                 )
 
-                # Calculate and store final result based on daily execution performance
-                logger.info(
-                    f"  Calculating final results for bot {bot_sim_config.bot_index}..."
-                )
                 self._calculate_and_store_result(bot_sim_config, execution_result, None)
 
                 # Log final summary
@@ -728,9 +684,15 @@ class SimulationEngine:
         """Create a temporary TradingBotConfig from simulation config."""
         config_json = bot_sim_config.config_json
 
-        # Get enabled indicators/patterns from config_json (from group combinations)
-        # If not provided, use comprehensive defaults
+        # Get enabled indicators/patterns from config_json (set by parameter generator)
+        # If not in config_json, try to get from simulation run's config_ranges
         enabled_indicators = config_json.get("enabled_indicators")
+        if not enabled_indicators:
+            # Try to get indicator groups from config_json
+            indicator_groups = config_json.get("indicator_groups")
+            if indicator_groups:
+                enabled_indicators = self._get_indicators_from_groups(indicator_groups)
+
         if not enabled_indicators:
             # Enable ALL indicators with reasonable configurations for simulations
             enabled_indicators = {
@@ -781,6 +743,12 @@ class SimulationEngine:
 
         enabled_patterns = config_json.get("enabled_patterns")
         if not enabled_patterns:
+            # Try to get pattern groups from config_json
+            pattern_groups = config_json.get("pattern_groups")
+            if pattern_groups:
+                enabled_patterns = self._get_patterns_from_groups(pattern_groups)
+
+        if not enabled_patterns:
             # Enable ALL patterns with reasonable confidence thresholds
             enabled_patterns = {
                 # Candlestick Patterns
@@ -816,13 +784,19 @@ class SimulationEngine:
 
         enabled_ml_models = config_json.get("enabled_ml_models", [])
 
+        # Initialize cash from budget_cash
+        budget_cash = Decimal("10000.00")
+        initial_cash = Decimal(str(self.simulation_run.initial_fund))
+
         # Create and save a temporary bot config (will be cleaned up later)
         bot_config = TradingBotConfig.objects.create(
             user=self.simulation_run.user,
             name=f"Sim_{self.simulation_run.name}_Bot_{bot_sim_config.bot_index}",
             is_active=False,  # Not active, just for simulation
             budget_type="cash",
-            budget_cash=Decimal("10000.00"),
+            budget_cash=budget_cash,
+            cash_balance=initial_cash,  # Initialize cash balance from initial fund
+            initial_cash=initial_cash,  # Track initial cash allocation
             risk_per_trade=Decimal("2.00"),
             signal_aggregation_method=config_json.get(
                 "signal_aggregation_method", "weighted_average"
@@ -1078,3 +1052,37 @@ class SimulationEngine:
                 "signal_productivity": signal_analysis.get("signal_productivity", {}),
             },
         )
+
+    @staticmethod
+    def _get_indicators_from_groups(group_names: list[str]) -> dict[str, dict]:
+        """
+        Get enabled indicators from selected groups.
+
+        Args:
+            group_names: List of indicator group names
+
+        Returns:
+            Dictionary of enabled indicators with their configurations
+        """
+        enabled_indicators = {}
+        for group_name in group_names:
+            if group_name in INDICATOR_GROUPS:
+                enabled_indicators.update(INDICATOR_GROUPS[group_name])
+        return enabled_indicators
+
+    @staticmethod
+    def _get_patterns_from_groups(group_names: list[str]) -> dict[str, dict]:
+        """
+        Get enabled patterns from selected groups.
+
+        Args:
+            group_names: List of pattern group names
+
+        Returns:
+            Dictionary of enabled patterns with their configurations
+        """
+        enabled_patterns = {}
+        for group_name in group_names:
+            if group_name in PATTERN_GROUPS:
+                enabled_patterns.update(PATTERN_GROUPS[group_name])
+        return enabled_patterns

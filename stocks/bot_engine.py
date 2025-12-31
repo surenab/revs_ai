@@ -789,16 +789,7 @@ class TradingBot:
                 price_data = price_data[-limit:]
 
             if price_data:
-                logger.info(
-                    f"Using StockTick data for {stock.symbol}: {len(price_data)} days aggregated from {len(ticks)} ticks"
-                )
                 return price_data
-
-        # Fallback: Get daily data from StockPrice model ONLY if no tick data exists
-        logger.info(
-            f"No tick data found for {stock.symbol} in date range {start_date} to {end_date}, "
-            f"falling back to StockPrice daily data"
-        )
 
         daily_prices = list(
             StockPrice.objects.filter(
@@ -808,7 +799,7 @@ class TradingBot:
 
         if daily_prices:
             # Convert StockPrice to expected format
-            price_data = [
+            return [
                 {
                     "symbol": stock.symbol,
                     "open_price": price.open_price,
@@ -821,10 +812,6 @@ class TradingBot:
                 }
                 for price in daily_prices
             ]
-            logger.info(
-                f"Using StockPrice data (fallback) for {stock.symbol}: {len(price_data)} days"
-            )
-            return price_data
 
         logger.warning(
             f"No price data found for {stock.symbol} in date range {start_date} to {end_date}"
@@ -1174,10 +1161,8 @@ class TradingBot:
             return []
 
         pattern_ids = list(enabled_patterns.keys())
-        logger.info(f"Attempting to detect {len(pattern_ids)} patterns: {pattern_ids}")
 
         all_detected = pattern_detector.detect_all_patterns(price_data, pattern_ids)
-        logger.info(f"Pattern detection returned {len(all_detected)} matches")
 
         # Filter patterns by min_confidence if specified
         filtered_patterns = []
@@ -1193,11 +1178,6 @@ class TradingBot:
                     f"Pattern {pattern.pattern} filtered out: "
                     f"confidence {pattern.confidence:.2f} < min {min_confidence:.2f}"
                 )
-
-        logger.info(
-            f"Detected {len(all_detected)} patterns, "
-            f"{len(filtered_patterns)} passed confidence threshold"
-        )
 
         return filtered_patterns
 

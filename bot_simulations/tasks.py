@@ -359,8 +359,22 @@ def _execute_single_bot_simulation_internal(
         # Create temporary TradingBotConfig
         config_json = bot_sim_config.config_json
 
-        # Get enabled indicators/patterns from config_json or use comprehensive defaults
+        # Get enabled indicators/patterns from config_json (set by parameter generator)
+        # If not in config_json, try to get from simulation run's config_ranges
         enabled_indicators = config_json.get("enabled_indicators")
+        if not enabled_indicators:
+            # Try to get indicator groups from simulation run's config_ranges
+            indicator_groups = config_json.get("indicator_groups")
+            if indicator_groups:
+                from bot_simulations.simulation.parameter_generator import (
+                    ParameterGenerator,
+                )
+
+                generator = ParameterGenerator(simulation_run.config_ranges)
+                enabled_indicators = generator._get_indicators_from_groups(
+                    indicator_groups
+                )
+
         if not enabled_indicators:
             # Enable ALL indicators with reasonable configurations for simulations
             enabled_indicators = {
@@ -411,6 +425,19 @@ def _execute_single_bot_simulation_internal(
 
         enabled_patterns = config_json.get("enabled_patterns")
         if not enabled_patterns:
+            # Try to get pattern groups from config_json and reconstruct patterns
+            pattern_groups = config_json.get("pattern_groups")
+            if pattern_groups:
+                from bot_simulations.simulation.parameter_generator import (
+                    PATTERN_GROUPS,
+                )
+
+                enabled_patterns = {}
+                for group_name in pattern_groups:
+                    if group_name in PATTERN_GROUPS:
+                        enabled_patterns.update(PATTERN_GROUPS[group_name])
+
+        if not enabled_patterns:
             # Enable ALL patterns with reasonable confidence thresholds
             enabled_patterns = {
                 # Candlestick Patterns
@@ -446,12 +473,18 @@ def _execute_single_bot_simulation_internal(
 
         enabled_ml_models = config_json.get("enabled_ml_models", [])
 
+        # Initialize cash from budget_cash
+        budget_cash = Decimal("10000.00")
+        initial_cash = Decimal(str(simulation_run.initial_fund))
+
         bot_config = TradingBotConfig.objects.create(
             user=simulation_run.user,
             name=f"Sim_{simulation_run.name}_Bot_{bot_sim_config.bot_index}",
             is_active=False,
             budget_type="cash",
-            budget_cash=Decimal("10000.00"),
+            budget_cash=budget_cash,
+            cash_balance=initial_cash,  # Initialize cash balance from initial fund
+            initial_cash=initial_cash,  # Track initial cash allocation
             risk_per_trade=Decimal("2.00"),
             signal_aggregation_method=config_json.get(
                 "signal_aggregation_method", "weighted_average"
@@ -474,6 +507,9 @@ def _execute_single_bot_simulation_internal(
             take_profit_percent=Decimal(str(config_json.get("take_profit_percent", 0)))
             if config_json.get("take_profit_percent")
             else None,
+            # Signal persistence configuration
+            signal_persistence_type=config_json.get("signal_persistence_type"),
+            signal_persistence_value=config_json.get("signal_persistence_value"),
             # Social and News Analysis - enabled if configured in simulation
             enable_social_analysis=bot_sim_config.use_social_analysis,
             enable_news_analysis=bot_sim_config.use_news_analysis,

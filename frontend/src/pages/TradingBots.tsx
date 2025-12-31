@@ -81,6 +81,14 @@ const TradingBots: React.FC = () => {
   const { thresholds: defaultThresholds } = useIndicatorThresholds();
   const [bots, setBots] = useState<TradingBotConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    pageSize: 20,
+    totalCount: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrevious: false,
+  });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedBot, setSelectedBot] = useState<TradingBotConfig | null>(null);
@@ -146,11 +154,16 @@ const TradingBots: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchBots();
+    fetchBots(1);
     fetchStocks();
     fetchPortfolio();
     fetchMLModels();
   }, []);
+
+  useEffect(() => {
+    fetchBots(pagination.currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.currentPage]);
 
   const fetchMLModels = async () => {
     try {
@@ -178,31 +191,59 @@ const TradingBots: React.FC = () => {
     }
   }, [selectedBot, activeTab]);
 
-  const fetchBots = async () => {
+  const fetchBots = async (page: number = pagination.currentPage) => {
     try {
-      const response = await botAPI.getBots();
+      setIsLoading(true);
+      const response = await botAPI.getBots({
+        page,
+        page_size: pagination.pageSize,
+      });
+
       // Handle paginated response (Django REST Framework default)
       let botsData: TradingBotConfig[] = [];
+      let paginationData = {
+        currentPage: page,
+        pageSize: pagination.pageSize,
+        totalCount: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrevious: false,
+      };
 
       if (Array.isArray(response.data)) {
-        // Direct array response
+        // Direct array response (no pagination)
         botsData = response.data;
-      } else if (response.data && typeof response.data === "object") {
-        // Paginated response with results array
-        if (Array.isArray(response.data.results)) {
-          botsData = response.data.results;
-        } else if (Array.isArray(response.data)) {
-          botsData = response.data;
-        }
+        paginationData.totalCount = botsData.length;
+        paginationData.totalPages = 1;
+      } else if (response.data && typeof response.data === "object" && "results" in response.data) {
+        // Paginated response
+        const paginatedData = response.data as {
+          count: number;
+          next: string | null;
+          previous: string | null;
+          results: TradingBotConfig[];
+        };
+        botsData = paginatedData.results || [];
+        paginationData.totalCount = paginatedData.count || 0;
+        paginationData.totalPages = Math.ceil(paginationData.totalCount / pagination.pageSize);
+        paginationData.hasNext = paginatedData.next !== null;
+        paginationData.hasPrevious = paginatedData.previous !== null;
       }
 
       setBots(botsData);
+      setPagination(paginationData);
       setIsLoading(false);
     } catch (error) {
       console.error("Failed to load bots:", error);
       toast.error("Failed to load trading bots");
       setIsLoading(false);
       setBots([]); // Set empty array on error
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchBots(newPage);
     }
   };
 
@@ -369,7 +410,9 @@ const TradingBots: React.FC = () => {
       toast.success("Trading bot created successfully!");
       setShowCreateModal(false);
       resetForm();
-      fetchBots();
+      // Reset to first page after creating a bot
+      setPagination((prev) => ({ ...prev, currentPage: 1 }));
+      fetchBots(1);
     } catch (error: any) {
       // Handle field-specific errors from backend
       const errorData = error.response?.data;
@@ -425,8 +468,8 @@ const TradingBots: React.FC = () => {
         await botAPI.activateBot(bot.id);
         toast.success("Bot activated");
       }
-      // Refresh bots list
-      fetchBots();
+      // Refresh bots list (stay on current page)
+      fetchBots(pagination.currentPage);
       // Update selectedBot if it's the same bot that's open in modal
       if (selectedBot && selectedBot.id === bot.id) {
         try {
@@ -489,8 +532,8 @@ const TradingBots: React.FC = () => {
         fetchBotOrders(bot.id);
       }
 
-      // Refresh bots list to update any status changes
-      fetchBots();
+      // Refresh bots list to update any status changes (stay on current page)
+      fetchBots(pagination.currentPage);
     } catch (error) {
       toast.error("Failed to execute bot");
       console.error("Bot execution error:", error);
@@ -530,7 +573,15 @@ const TradingBots: React.FC = () => {
     try {
       await botAPI.deleteBot(bot.id);
       toast.success("Bot deleted successfully");
-      fetchBots();
+
+      // If current page will be empty after deletion, go to previous page
+      const currentPageBots = bots.length;
+      let pageToLoad = pagination.currentPage;
+      if (currentPageBots === 1 && pagination.currentPage > 1) {
+        pageToLoad = pagination.currentPage - 1;
+      }
+
+      fetchBots(pageToLoad);
       if (selectedBot?.id === bot.id) {
         setShowDetailsModal(false);
         setSelectedBot(null);
@@ -905,6 +956,74 @@ const TradingBots: React.FC = () => {
                   </div>
                 </motion.div>
               ))}
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-8 bg-gray-800/50 rounded-lg border border-gray-700/50 p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <span>
+                Showing {(pagination.currentPage - 1) * pagination.pageSize + 1} to{" "}
+                {Math.min(
+                  pagination.currentPage * pagination.pageSize,
+                  pagination.totalCount
+                )}{" "}
+                of {pagination.totalCount} bots
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePageChange(pagination.currentPage - 1)}
+                disabled={!pagination.hasPrevious || isLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  pagination.hasPrevious && !isLoading
+                    ? "bg-gray-700 hover:bg-gray-600 text-white"
+                    : "bg-gray-800 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (pagination.totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (pagination.currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                    pageNum = pagination.totalPages - 4 + i;
+                  } else {
+                    pageNum = pagination.currentPage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                      disabled={isLoading}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        pageNum === pagination.currentPage
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-700 hover:bg-gray-600 text-white"
+                      } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => handlePageChange(pagination.currentPage + 1)}
+                disabled={!pagination.hasNext || isLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  pagination.hasNext && !isLoading
+                    ? "bg-gray-700 hover:bg-gray-600 text-white"
+                    : "bg-gray-800 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
 
