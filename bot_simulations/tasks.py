@@ -3,9 +3,10 @@ Celery tasks for bot simulation functionality.
 """
 
 import logging
+import time
 
 from celery import shared_task
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, OperationalError, transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -643,14 +644,62 @@ def _execute_single_bot_simulation_internal(
         # Calculate and store final result
         engine._calculate_and_store_result(bot_sim_config, execution_result, None)
 
-        # Update bot config status
-        with transaction.atomic():
-            bot_sim_config.status = "completed"
-            bot_sim_config.progress_percentage = Decimal("100.00")
-            bot_sim_config.save()
+        # Update bot config status with retry logic for SQLite locking
+        max_retries = 10
+        retry_delay = 0.1  # Start with 100ms
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    bot_sim_config.status = "completed"
+                    bot_sim_config.progress_percentage = Decimal("100.00")
+                    bot_sim_config.save()
+                break  # Success, exit retry loop
+            except OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    delay = retry_delay * (2**attempt) + (time.time() % 0.1)
+                    logger.warning(
+                        f"Database locked updating bot config status (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay:.3f}s for bot {bot_sim_config.bot_index}"
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.exception(
+                        f"Failed to update bot config status after {attempt + 1} attempts "
+                        f"for bot {bot_sim_config.bot_index}"
+                    )
+                    raise
+            except Exception as e:
+                logger.exception(
+                    f"Unexpected error updating bot config status for bot {bot_sim_config.bot_index}: {e}"
+                )
+                raise
 
-        # Clean up temporary bot config
-        bot_config.delete()
+        # Clean up temporary bot config with retry logic
+        for attempt in range(max_retries):
+            try:
+                bot_config.delete()
+                break  # Success, exit retry loop
+            except OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    delay = retry_delay * (2**attempt) + (time.time() % 0.1)
+                    logger.warning(
+                        f"Database locked deleting bot config (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay:.3f}s for bot {bot_sim_config.bot_index}"
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.exception(
+                        f"Failed to delete bot config after {attempt + 1} attempts "
+                        f"for bot {bot_sim_config.bot_index}"
+                    )
+                    raise
+            except Exception as e:
+                logger.exception(
+                    f"Unexpected error deleting bot config for bot {bot_sim_config.bot_index}: {e}"
+                )
+                raise
 
         logger.info(f"Bot {bot_sim_config.bot_index} completed successfully")
         return {

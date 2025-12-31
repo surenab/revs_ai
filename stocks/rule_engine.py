@@ -31,6 +31,10 @@ class RuleEvaluator:
         """
         self.price_data = price_data
         self.indicators_data = indicators_data or {}
+        # Track if indicators_data was explicitly provided (even if empty)
+        # This allows us to distinguish between "not provided" (calculate on fly)
+        # and "explicitly provided but empty" (don't calculate missing ones)
+        self._indicators_data_provided = indicators_data is not None
         self.patterns_data = patterns_data or []
         self.latest_index = len(price_data) - 1 if price_data else -1
 
@@ -208,7 +212,14 @@ class RuleEvaluator:
             if isinstance(values, list) and values:
                 return values[-1] if isinstance(values[-1], int | float) else None
 
-        # Calculate on the fly if not cached
+        # Only calculate on the fly if indicators_data was not explicitly provided
+        # If indicators_data was explicitly provided (even if empty), don't calculate missing ones
+        # This allows tests to verify behavior when indicators are missing
+        if self._indicators_data_provided and key not in self.indicators_data:
+            # indicators_data was explicitly provided but doesn't contain this indicator
+            return None
+
+        # Calculate on the fly if indicators_data was None (not provided)
         try:
             if indicator_name == "sma":
                 values = indicators.calculate_sma(self.price_data, period)

@@ -3,11 +3,12 @@ Simulation engine for orchestrating multi-bot trading simulations.
 """
 
 import logging
+import time
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from django.utils import timezone
 
 from bot_simulations.models import (
@@ -924,7 +925,7 @@ class SimulationEngine:
         daily_results: list[dict[str, Any]],
         phase: str = "testing",
     ):
-        """Store daily results in database."""
+        """Store daily results in database with retry logic for SQLite locking."""
         from datetime import date as date_type
 
         for day_result in daily_results:
@@ -937,16 +938,50 @@ class SimulationEngine:
             performance_metrics = day_result.get("performance_metrics", {})
             performance_metrics["phase"] = phase
 
-            BotSimulationDay.objects.update_or_create(
-                simulation_config=bot_sim_config,
-                date=day_date,
-                defaults={
-                    "decisions": day_result.get("decisions", {}),
-                    "actual_prices": day_result.get("actual_prices", {}),
-                    "performance_metrics": performance_metrics,
-                    "signal_contributions": day_result.get("signal_contributions", {}),
-                },
-            )
+            # Retry logic for database operations (handles SQLite locking in multi-threaded scenarios)
+            max_retries = 10
+            retry_delay = 0.1  # Start with 100ms
+            for attempt in range(max_retries):
+                try:
+                    with transaction.atomic():
+                        BotSimulationDay.objects.update_or_create(
+                            simulation_config=bot_sim_config,
+                            date=day_date,
+                            defaults={
+                                "decisions": day_result.get("decisions", {}),
+                                "actual_prices": day_result.get("actual_prices", {}),
+                                "performance_metrics": performance_metrics,
+                                "signal_contributions": day_result.get(
+                                    "signal_contributions", {}
+                                ),
+                            },
+                        )
+                    break  # Success, exit retry loop
+                except OperationalError as e:
+                    if (
+                        "database is locked" in str(e).lower()
+                        and attempt < max_retries - 1
+                    ):
+                        # Exponential backoff with jitter
+                        delay = retry_delay * (2**attempt) + (time.time() % 0.1)
+                        logger.warning(
+                            f"Database locked (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying in {delay:.3f}s for bot {bot_sim_config.bot_index}, "
+                            f"date {day_date}"
+                        )
+                        time.sleep(delay)
+                    else:
+                        logger.exception(
+                            f"Failed to store daily result after {attempt + 1} attempts "
+                            f"for bot {bot_sim_config.bot_index}, date {day_date}"
+                        )
+                        raise
+                except Exception as e:
+                    logger.exception(
+                        f"Unexpected error storing daily result for bot {bot_sim_config.bot_index}, "
+                        f"date {day_date}: {e}"
+                    )
+                    raise
 
     def _calculate_and_store_result(
         self,
@@ -1036,22 +1071,50 @@ class SimulationEngine:
             drawdown = peak_value - cumulative_value
             max_drawdown = max(max_drawdown, drawdown)
 
-        # Create or update result
-        BotSimulationResult.objects.update_or_create(
-            simulation_config=bot_sim_config,
-            defaults={
-                "total_profit": Decimal(str(total_profit)),
-                "total_trades": total_trades,
-                "winning_trades": winning_trades,
-                "losing_trades": losing_trades,
-                "win_rate": Decimal(str(win_rate)),
-                "average_profit": average_profit,
-                "max_drawdown": max_drawdown,
-                "final_cash": final_cash,
-                "final_portfolio_value": final_portfolio_value,
-                "signal_productivity": signal_analysis.get("signal_productivity", {}),
-            },
-        )
+        # Create or update result with retry logic for SQLite locking
+        max_retries = 10
+        retry_delay = 0.1  # Start with 100ms
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    BotSimulationResult.objects.update_or_create(
+                        simulation_config=bot_sim_config,
+                        defaults={
+                            "total_profit": Decimal(str(total_profit)),
+                            "total_trades": total_trades,
+                            "winning_trades": winning_trades,
+                            "losing_trades": losing_trades,
+                            "win_rate": Decimal(str(win_rate)),
+                            "average_profit": average_profit,
+                            "max_drawdown": max_drawdown,
+                            "final_cash": final_cash,
+                            "final_portfolio_value": final_portfolio_value,
+                            "signal_productivity": signal_analysis.get(
+                                "signal_productivity", {}
+                            ),
+                        },
+                    )
+                break  # Success, exit retry loop
+            except OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    delay = retry_delay * (2**attempt) + (time.time() % 0.1)
+                    logger.warning(
+                        f"Database locked (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay:.3f}s for bot {bot_sim_config.bot_index} result"
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.exception(
+                        f"Failed to store simulation result after {attempt + 1} attempts "
+                        f"for bot {bot_sim_config.bot_index}"
+                    )
+                    raise
+            except Exception as e:
+                logger.exception(
+                    f"Unexpected error storing simulation result for bot {bot_sim_config.bot_index}: {e}"
+                )
+                raise
 
     @staticmethod
     def _get_indicators_from_groups(group_names: list[str]) -> dict[str, dict]:
