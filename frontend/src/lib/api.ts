@@ -698,6 +698,41 @@ export const orderAPI = {
 };
 
 // Trading Bot Types
+
+// Bot Portfolio Types (defined first to avoid forward reference issues)
+export interface BotPortfolioLot {
+  id: string;
+  bot_portfolio: string;
+  order?: string;
+  quantity: number;
+  purchase_price: number;
+  purchase_date: string;
+  remaining_quantity: number;
+  stock_symbol: string;
+  stock_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BotPortfolio {
+  id: string;
+  bot_config: string;
+  stock: string;
+  stock_symbol: string;
+  stock_name: string;
+  quantity: number;
+  average_purchase_price: number;
+  total_cost_basis: number;
+  first_purchase_date?: string;
+  last_purchase_date?: string;
+  current_value: number;
+  gain_loss: number;
+  gain_loss_percent: number;
+  lots?: BotPortfolioLot[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TradingBotConfig {
   id: string;
   user: string;
@@ -736,6 +771,14 @@ export interface TradingBotConfig {
   risk_score_threshold?: number;
   risk_adjustment_factor?: number;
   risk_based_position_scaling?: boolean;
+  signal_persistence_type?: 'tick_count' | 'time_duration' | null;
+  signal_persistence_value?: number | null;
+  cash_balance?: number;
+  initial_cash?: number;
+  initial_portfolio_value?: number;
+  bot_portfolio_holdings?: BotPortfolio[];
+  total_equity?: number;
+  portfolio_value?: number;
   created_at: string;
   updated_at: string;
 }
@@ -751,6 +794,9 @@ export interface TradingBotExecution {
   indicators_data: Record<string, any>;
   patterns_detected: Record<string, any>;
   risk_score?: number;
+  persistence_met?: boolean | null;
+  persistence_count?: number | null;
+  persistence_signal_history?: Array<Record<string, any>>;
   executed_order?: Order;
   bot_config_settings?: {
     enable_social_analysis?: boolean;
@@ -814,6 +860,8 @@ export interface BotCreateRequest {
   risk_score_threshold?: number;
   risk_adjustment_factor?: number;
   risk_based_position_scaling?: boolean;
+  signal_persistence_type?: 'tick_count' | 'time_duration' | null;
+  signal_persistence_value?: number | null;
 }
 
 // Notification Types
@@ -960,6 +1008,26 @@ export const botAPI = {
   // Get bot performance
   getBotPerformance: (id: string): Promise<AxiosResponse<BotPerformance>> =>
     api.get(`/stocks/bots/${id}/performance/`),
+
+  // Get bot portfolio holdings
+  getBotPortfolio: (id: string): Promise<AxiosResponse<BotPortfolio[]>> =>
+    api.get(`/stocks/bots/${id}/portfolio/`),
+
+  // Get bot portfolio lots
+  getBotPortfolioLots: (id: string, stockId?: string): Promise<AxiosResponse<BotPortfolioLot[]>> => {
+    const params = stockId ? { stock_id: stockId } : {};
+    return api.get(`/stocks/bots/${id}/portfolio/lots/`, { params });
+  },
+
+  // Get bot equity (cash + portfolio value)
+  getBotEquity: (id: string): Promise<AxiosResponse<{
+    bot_id: string;
+    bot_name: string;
+    cash_balance: number;
+    portfolio_value: number;
+    total_equity: number;
+  }>> =>
+    api.get(`/stocks/bots/${id}/equity/`),
 
   // Get bot templates
   getBotTemplates: (): Promise<AxiosResponse<Record<string, any>>> =>
@@ -1118,5 +1186,269 @@ export const getDefaultIndicatorThresholds =
       return {};
     }
   };
+
+// Simulation Types
+export interface BotSimulationRun {
+  id: string;
+  user: string;
+  user_details?: {
+    id: number;
+    email: string;
+  };
+  name: string;
+  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  execution_start_date?: string;
+  execution_end_date?: string;
+  total_data_points: number;
+  training_data_points?: number;
+  validation_data_points?: number;
+  stocks: string[] | Array<{ id: string; symbol: string; name?: string }>;
+  total_bots: number;
+  config_ranges: Record<string, any>;
+  progress?: number | null;
+  current_day?: string;
+  bots_completed: number;
+  top_performers?: Array<any>;
+  bot_execution_times?: number[];
+  error_message?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  simulation_type?: "fund" | "portfolio";
+  initial_fund?: number;
+  initial_portfolio?: Record<string, number>; // {symbol: quantity}
+}
+
+export interface BotSimulationConfig {
+  id: string;
+  simulation_run: string;
+  bot_index: number;
+  config_json: Record<string, any>;
+  assigned_stocks: string[];
+  stock_symbols: string[];
+  use_social_analysis: boolean;
+  use_news_analysis: boolean;
+}
+
+export interface BotSimulationResult {
+  id: string;
+  simulation_config: BotSimulationConfig;
+  total_profit: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  average_profit: number;
+  average_loss: number;
+  max_drawdown: number;
+  sharpe_ratio?: number;
+  signal_productivity: Record<string, any>;
+  best_decisions: Array<any>;
+  worst_decisions: Array<any>;
+  final_cash: number;
+  final_portfolio_value: number;
+  created_at: string;
+}
+
+export interface SimulationProgress {
+  simulation: {
+    status: string;
+    progress: number;
+    current_day: string | null;
+    bots_completed: number;
+    total_bots: number;
+  };
+  bots: Array<{
+    bot_index: number;
+    status: string;
+    progress: number;
+    current_date: string | null;
+    current_tick_index: number;
+  }>;
+  estimated_completion: string | null;
+  // Legacy fields for backward compatibility
+  status?: string;
+  progress?: number | null;
+  current_day?: string;
+  bots_completed?: number;
+  total_bots?: number;
+  current_bot?: {
+    bot_index: number;
+    config: BotSimulationConfig;
+  };
+}
+
+export interface SimulationCreateRequest {
+  name: string;
+  stock_ids?: string[];
+  stocks?: string[]; // Legacy support
+  config_ranges: Record<string, any>;
+  training_start?: string;
+  training_end?: string;
+  validation_start?: string;
+  validation_end?: string;
+  execution_start_date?: string;
+  execution_end_date?: string;
+  simulation_type?: "fund" | "portfolio";
+  initial_fund?: number;
+  initial_portfolio?: Record<string, number>; // {symbol: quantity}
+}
+
+export const simulationAPI = {
+  // Create new simulation
+  createSimulation: (data: SimulationCreateRequest): Promise<AxiosResponse<BotSimulationRun>> =>
+    api.post('/simulations/create/', data),
+
+  // Update simulation
+  updateSimulation: (id: string, data: Partial<SimulationCreateRequest>): Promise<AxiosResponse<BotSimulationRun>> =>
+    api.patch(`/simulations/${id}/`, data),
+
+  // Get all simulations
+  getSimulations: (): Promise<AxiosResponse<BotSimulationRun[]>> =>
+    api.get('/simulations/'),
+
+  // Get simulation detail
+  getSimulation: (id: string): Promise<AxiosResponse<BotSimulationRun>> =>
+    api.get(`/simulations/${id}/`),
+
+  // Get simulation status
+  getSimulationStatus: (id: string): Promise<AxiosResponse<{
+    id: string;
+    status: string;
+    progress?: number | null;
+    current_day?: string;
+    bots_completed: number;
+    total_bots: number;
+    started_at?: string;
+    completed_at?: string;
+    error_message?: string;
+  }>> =>
+    api.get(`/simulations/${id}/status/`),
+
+  // Get simulation results
+  getSimulationResults: (id: string): Promise<AxiosResponse<{
+    simulation: BotSimulationRun;
+    results: BotSimulationResult[];
+    top_performers?: Array<any>;
+  }>> =>
+    api.get(`/simulations/${id}/results/`),
+
+  // Get simulation progress (real-time) - enhanced with bot details
+  getSimulationProgress: (id: string): Promise<AxiosResponse<{
+    simulation: {
+      status: string;
+      progress: number;
+      current_day: string | null;
+      bots_completed: number;
+      total_bots: number;
+    };
+    bots: Array<{
+      bot_index: number;
+      status: string;
+      progress: number;
+      current_date: string | null;
+      current_tick_index: number;
+    }>;
+    estimated_completion: string | null;
+  }>> =>
+    api.get(`/simulations/${id}/progress/`),
+
+  // Cancel simulation
+  cancelSimulation: (id: string): Promise<AxiosResponse<{ message: string; status: string }>> =>
+    api.post(`/simulations/${id}/cancel/`),
+
+  // Rerun simulation
+  rerunSimulation: (id: string): Promise<AxiosResponse<{
+    message: string;
+    simulation: BotSimulationRun;
+    status: string;
+    task_id?: string;
+  }>> =>
+    api.post(`/simulations/${id}/rerun/`),
+
+  // Pause simulation
+  pauseSimulation: (id: string): Promise<AxiosResponse<{ message: string; status: string }>> =>
+    api.post(`/simulations/${id}/pause/`),
+
+  // Resume simulation
+  resumeSimulation: (id: string): Promise<AxiosResponse<{ message: string; status: string }>> =>
+    api.post(`/simulations/${id}/resume/`),
+
+  // Get comprehensive analysis
+  getSimulationAnalysis: (id: string): Promise<AxiosResponse<{
+    simulation_id: string;
+    simulation_name: string;
+    total_bots: number;
+    top_performers: Array<{
+      bot_index: number;
+      total_profit: number;
+      win_rate: number;
+      total_trades: number;
+      config: Record<string, any>;
+    }>;
+    indicator_impact: Record<string, any>;
+    pattern_impact: Record<string, any>;
+    signal_impact: Record<string, any>;
+    daily_performance: Array<{
+      date: string;
+      daily_profit: number;
+      cumulative_profit: number;
+      cash: number;
+      portfolio_value: number;
+      total_value: number;
+      trades_today: number;
+    }>;
+  }>> =>
+    api.get(`/simulations/${id}/analysis/`),
+
+  // Get bot progress details
+  getBotProgress: (simulationId: string, botId: string): Promise<AxiosResponse<{
+    bot_index: number;
+    status: string;
+    progress: number;
+    current_date: string | null;
+    current_tick_index: number;
+    total_ticks_today: number;
+    config: any;
+  }>> =>
+    api.get(`/simulations/${simulationId}/bots/${botId}/progress/`),
+
+  // Get tick-level results
+  getTicks: (id: string, params?: {
+    bot_config_id?: string;
+    date_from?: string;
+    date_to?: string;
+    stock_symbol?: string;
+  }): Promise<AxiosResponse<{
+    simulation_id: string;
+    total_ticks: number;
+    ticks: Array<{
+      id: string;
+      date: string;
+      tick_timestamp: string;
+      stock_symbol: string;
+      tick_price: number;
+      decision: any;
+      signal_contributions: any;
+      portfolio_state: any;
+      cumulative_profit: number;
+      trade_executed: boolean;
+      trade_details: any;
+    }>;
+  }>> =>
+    api.get(`/simulations/${id}/results/ticks/`, { params }),
+
+  // Get daily results for a bot config
+  getDailyResults: (configId: string, params?: {
+    phase?: string;
+  }): Promise<AxiosResponse<Array<{
+    id: string;
+    date: string;
+    decisions: Record<string, any>;
+    performance_metrics: Record<string, any>;
+    signal_contributions?: Record<string, any>;
+  }>>> =>
+    api.get(`/simulations/daily-results/${configId}/`, { params }),
+};
 
 export default api;

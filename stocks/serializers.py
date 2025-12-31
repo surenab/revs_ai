@@ -4,6 +4,8 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from .models import (
+    BotPortfolio,
+    BotPortfolioLot,
     BotSignalHistory,
     IntradayPrice,
     MLModel,
@@ -911,6 +913,9 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
     budget_portfolio = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Portfolio.objects.all(), required=False, allow_empty=True
     )
+    bot_portfolio_holdings = serializers.SerializerMethodField()
+    total_equity = serializers.SerializerMethodField()
+    portfolio_value = serializers.SerializerMethodField()
 
     class Meta:
         model = TradingBotConfig
@@ -922,6 +927,9 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             "budget_type",
             "budget_cash",
             "budget_portfolio",
+            "cash_balance",
+            "initial_cash",
+            "initial_portfolio_value",
             "assigned_stocks",
             "max_position_size",
             "max_daily_trades",
@@ -945,24 +953,87 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             "risk_score_threshold",
             "risk_adjustment_factor",
             "risk_based_position_scaling",
+            "signal_persistence_type",
+            "signal_persistence_value",
+            "bot_portfolio_holdings",
+            "total_equity",
+            "portfolio_value",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "user", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "user",
+            "bot_portfolio_holdings",
+            "total_equity",
+            "portfolio_value",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_bot_portfolio_holdings(self, obj):
+        """Get bot portfolio holdings."""
+        from .models import BotPortfolio
+
+        holdings = (
+            BotPortfolio.objects.filter(bot_config=obj, quantity__gt=0)
+            .select_related("stock")
+            .prefetch_related("lots")
+        )
+        return BotPortfolioSerializer(holdings, many=True).data
+
+    def get_total_equity(self, obj):
+        """Get total bot equity (cash + portfolio value)."""
+        return float(obj.get_total_equity())
+
+    def get_portfolio_value(self, obj):
+        """Get current portfolio value."""
+        return float(obj.get_portfolio_value())
 
     def validate(self, data):
         """Validate bot configuration."""
         budget_type = data.get("budget_type", "cash")
+        budget_cash = data.get("budget_cash")
+        budget_portfolio = data.get("budget_portfolio", [])
 
-        if budget_type == "cash" and not data.get("budget_cash"):
+        # Ensure at least one budget option is provided
+        has_cash = budget_cash is not None and budget_cash > 0
+        has_portfolio = budget_portfolio and len(budget_portfolio) > 0
+
+        if not has_cash and not has_portfolio:
+            raise serializers.ValidationError(
+                {
+                    "budget_cash": "At least one of cash budget or portfolio positions must be provided",
+                    "budget_portfolio": "At least one of cash budget or portfolio positions must be provided",
+                }
+            )
+
+        # Additional validation based on budget_type
+        if budget_type == "cash" and not has_cash:
             raise serializers.ValidationError(
                 {"budget_cash": "Cash budget is required when budget_type is 'cash'"}
             )
 
-        if budget_type == "portfolio" and not data.get("budget_portfolio"):
+        if budget_type == "portfolio" and not has_portfolio:
             raise serializers.ValidationError(
                 {
                     "budget_portfolio": "Portfolio positions are required when budget_type is 'portfolio'"
+                }
+            )
+
+        # Validate persistence configuration
+        persistence_type = data.get("signal_persistence_type")
+        persistence_value = data.get("signal_persistence_value")
+        if persistence_type and not persistence_value:
+            raise serializers.ValidationError(
+                {
+                    "signal_persistence_value": "signal_persistence_value is required when signal_persistence_type is set"
+                }
+            )
+        if persistence_value and not persistence_type:
+            raise serializers.ValidationError(
+                {
+                    "signal_persistence_type": "signal_persistence_type is required when signal_persistence_value is set"
                 }
             )
 
@@ -1020,9 +1091,17 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """Create bot configuration."""
+        """Create bot configuration and initialize cash/portfolio."""
+        from decimal import Decimal
+
         assigned_stocks = validated_data.pop("assigned_stocks", [])
         budget_portfolio = validated_data.pop("budget_portfolio", [])
+
+        # Initialize cash_balance from budget_cash
+        budget_cash = validated_data.get("budget_cash")
+        if budget_cash:
+            validated_data["cash_balance"] = budget_cash
+            validated_data["initial_cash"] = budget_cash
 
         bot_config = TradingBotConfig.objects.create(**validated_data)
 
@@ -1031,12 +1110,79 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         if budget_portfolio:
             bot_config.budget_portfolio.set(budget_portfolio)
 
+        # Create BotPortfolio entries from assigned portfolio positions
+        if budget_portfolio:
+            from .models import BotPortfolio, BotPortfolioLot
+
+            initial_portfolio_value = Decimal("0.00")
+            for portfolio_pos in budget_portfolio:
+                # Create BotPortfolio entry
+                bot_portfolio, created = BotPortfolio.objects.get_or_create(
+                    bot_config=bot_config,
+                    stock=portfolio_pos.stock,
+                    defaults={
+                        "quantity": portfolio_pos.quantity,
+                        "average_purchase_price": portfolio_pos.purchase_price,
+                        "total_cost_basis": portfolio_pos.total_cost,
+                        "first_purchase_date": portfolio_pos.purchase_date,
+                        "last_purchase_date": portfolio_pos.purchase_date,
+                    },
+                )
+
+                if not created:
+                    # Update existing entry
+                    total_quantity = bot_portfolio.quantity + portfolio_pos.quantity
+                    total_cost = (
+                        bot_portfolio.total_cost_basis + portfolio_pos.total_cost
+                    )
+                    bot_portfolio.quantity = total_quantity
+                    bot_portfolio.total_cost_basis = total_cost
+                    bot_portfolio.average_purchase_price = (
+                        total_cost / Decimal(str(total_quantity))
+                        if total_quantity > 0
+                        else Decimal("0.00")
+                    )
+                    if not bot_portfolio.first_purchase_date:
+                        bot_portfolio.first_purchase_date = portfolio_pos.purchase_date
+                    bot_portfolio.last_purchase_date = portfolio_pos.purchase_date
+                    bot_portfolio.save()
+
+                # Create BotPortfolioLot entry
+                BotPortfolioLot.objects.create(
+                    bot_portfolio=bot_portfolio,
+                    order=portfolio_pos.order,
+                    quantity=portfolio_pos.quantity,
+                    purchase_price=portfolio_pos.purchase_price,
+                    purchase_date=portfolio_pos.purchase_date,
+                    remaining_quantity=portfolio_pos.quantity,
+                )
+
+                # Calculate initial portfolio value
+                initial_portfolio_value += bot_portfolio.current_value
+
+            bot_config.initial_portfolio_value = initial_portfolio_value
+            bot_config.save(update_fields=["initial_portfolio_value"])
+
         return bot_config
 
     def update(self, instance, validated_data):
         """Update bot configuration."""
+        from decimal import Decimal
+
         assigned_stocks = validated_data.pop("assigned_stocks", None)
         budget_portfolio = validated_data.pop("budget_portfolio", None)
+
+        # Update cash_balance if budget_cash changed
+        if "budget_cash" in validated_data:
+            new_budget_cash = validated_data["budget_cash"]
+            if new_budget_cash and not instance.initial_cash:
+                # First time setting cash
+                instance.cash_balance = new_budget_cash
+                instance.initial_cash = new_budget_cash
+            elif new_budget_cash and instance.cash_balance == instance.initial_cash:
+                # Cash hasn't been used yet, update it
+                instance.cash_balance = new_budget_cash
+                instance.initial_cash = new_budget_cash
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -1048,7 +1194,141 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         if budget_portfolio is not None:
             instance.budget_portfolio.set(budget_portfolio)
 
+            # Update BotPortfolio entries from assigned portfolio positions
+            from .models import BotPortfolio, BotPortfolioLot
+
+            # Remove old BotPortfolio entries that are no longer in budget_portfolio
+            current_portfolio_stocks = {pos.stock for pos in budget_portfolio}
+            BotPortfolio.objects.filter(bot_config=instance).exclude(
+                stock__in=current_portfolio_stocks
+            ).delete()
+
+            # Create/update BotPortfolio entries
+            initial_portfolio_value = Decimal("0.00")
+            for portfolio_pos in budget_portfolio:
+                bot_portfolio, created = BotPortfolio.objects.get_or_create(
+                    bot_config=instance,
+                    stock=portfolio_pos.stock,
+                    defaults={
+                        "quantity": portfolio_pos.quantity,
+                        "average_purchase_price": portfolio_pos.purchase_price,
+                        "total_cost_basis": portfolio_pos.total_cost,
+                        "first_purchase_date": portfolio_pos.purchase_date,
+                        "last_purchase_date": portfolio_pos.purchase_date,
+                    },
+                )
+
+                if not created:
+                    # Update existing entry
+                    total_quantity = bot_portfolio.quantity + portfolio_pos.quantity
+                    total_cost = (
+                        bot_portfolio.total_cost_basis + portfolio_pos.total_cost
+                    )
+                    bot_portfolio.quantity = total_quantity
+                    bot_portfolio.total_cost_basis = total_cost
+                    bot_portfolio.average_purchase_price = (
+                        total_cost / Decimal(str(total_quantity))
+                        if total_quantity > 0
+                        else Decimal("0.00")
+                    )
+                    if not bot_portfolio.first_purchase_date:
+                        bot_portfolio.first_purchase_date = portfolio_pos.purchase_date
+                    bot_portfolio.last_purchase_date = portfolio_pos.purchase_date
+                    bot_portfolio.save()
+
+                # Create BotPortfolioLot entry if it doesn't exist
+                if portfolio_pos.order:
+                    BotPortfolioLot.objects.get_or_create(
+                        bot_portfolio=bot_portfolio,
+                        order=portfolio_pos.order,
+                        defaults={
+                            "quantity": portfolio_pos.quantity,
+                            "purchase_price": portfolio_pos.purchase_price,
+                            "purchase_date": portfolio_pos.purchase_date,
+                            "remaining_quantity": portfolio_pos.quantity,
+                        },
+                    )
+
+                initial_portfolio_value += bot_portfolio.current_value
+
+            instance.initial_portfolio_value = initial_portfolio_value
+            instance.save(update_fields=["initial_portfolio_value"])
+
         return instance
+
+
+class BotPortfolioLotSerializer(serializers.ModelSerializer):
+    """Serializer for BotPortfolioLot model."""
+
+    stock_symbol = serializers.CharField(
+        source="bot_portfolio.stock.symbol", read_only=True
+    )
+    stock_name = serializers.CharField(
+        source="bot_portfolio.stock.name", read_only=True
+    )
+
+    class Meta:
+        model = BotPortfolioLot
+        fields = [
+            "id",
+            "bot_portfolio",
+            "order",
+            "quantity",
+            "purchase_price",
+            "purchase_date",
+            "remaining_quantity",
+            "stock_symbol",
+            "stock_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class BotPortfolioSerializer(serializers.ModelSerializer):
+    """Serializer for BotPortfolio model."""
+
+    stock_symbol = serializers.CharField(source="stock.symbol", read_only=True)
+    stock_name = serializers.CharField(source="stock.name", read_only=True)
+    current_value = serializers.DecimalField(
+        max_digits=15, decimal_places=2, read_only=True
+    )
+    gain_loss = serializers.DecimalField(
+        max_digits=15, decimal_places=2, read_only=True
+    )
+    gain_loss_percent = serializers.DecimalField(
+        max_digits=5, decimal_places=2, read_only=True
+    )
+    lots = BotPortfolioLotSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = BotPortfolio
+        fields = [
+            "id",
+            "bot_config",
+            "stock",
+            "stock_symbol",
+            "stock_name",
+            "quantity",
+            "average_purchase_price",
+            "total_cost_basis",
+            "first_purchase_date",
+            "last_purchase_date",
+            "current_value",
+            "gain_loss",
+            "gain_loss_percent",
+            "lots",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "current_value",
+            "gain_loss",
+            "gain_loss_percent",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class TradingBotExecutionSerializer(serializers.ModelSerializer):
@@ -1158,6 +1438,9 @@ class TradingBotExecutionSerializer(serializers.ModelSerializer):
             "indicators_data",
             "patterns_detected",
             "risk_score",
+            "persistence_met",
+            "persistence_count",
+            "persistence_signal_history",
             "executed_order",
             "signal_history",
             "bot_config_settings",

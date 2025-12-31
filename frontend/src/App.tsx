@@ -33,6 +33,13 @@ import EditBot from "./pages/EditBot";
 import BotSignalHistoryPage from "./pages/BotSignalHistory";
 import BotExecutionDetail from "./pages/BotExecutionDetail";
 import BotSystemDocumentation from "./pages/admin/BotSystemDocumentation";
+import BotSimulationList from "./pages/simulations/BotSimulationList";
+import BotSimulationCreate from "./pages/simulations/BotSimulationCreate";
+import BotSimulationDetail from "./pages/simulations/BotSimulationDetail";
+import BotSimulationEdit from "./pages/simulations/BotSimulationEdit";
+import BotSimulationResults from "./pages/simulations/BotSimulationResults";
+import BotSimulationProgress from "./pages/simulations/BotSimulationProgress";
+import BotSimulationResultDetail from "./pages/simulations/BotSimulationResultDetail";
 
 function App() {
   return (
@@ -128,13 +135,71 @@ function App() {
                       </AdminRoute>
                     }
                   />
-                </Route>
 
-                {/* Catch all route */}
-                <Route
-                  path="*"
-                  element={<Navigate to="/dashboard" replace />}
-                />
+                  {/* Simulation routes - Admin only */}
+                  <Route
+                    path="simulations"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationList />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/create"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationCreate />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/:id"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/:id/edit"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationEdit />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/:id/results/:configId"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationResultDetail />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/:id/progress"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationProgress />
+                      </AdminRoute>
+                    }
+                  />
+                  <Route
+                    path="simulations/:id/results"
+                    element={
+                      <AdminRoute>
+                        <BotSimulationResults />
+                      </AdminRoute>
+                    }
+                  />
+
+                  {/* Catch all route for protected routes */}
+                  <Route
+                    path="*"
+                    element={<Navigate to="/dashboard" replace />}
+                  />
+                </Route>
               </Routes>
 
               {/* Toast notifications */}

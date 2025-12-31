@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Search,
   Bot,
+  PlaySquare,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import Avatar from "../common/Avatar";
@@ -29,9 +30,12 @@ const Navbar: React.FC = () => {
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Stocks", href: "/stocks", icon: TrendingUp },
     { name: "Portfolio", href: "/portfolio", icon: User },
-    // Only show Bots for admin users
+    // Only show Bots and Simulations for admin users
     ...(user?.role === "admin"
-      ? [{ name: "Bots", href: "/trading-bots", icon: Bot }]
+      ? [
+          { name: "Bots", href: "/trading-bots", icon: Bot },
+          { name: "Simulations", href: "/simulations", icon: PlaySquare },
+        ]
       : []),
   ];
 

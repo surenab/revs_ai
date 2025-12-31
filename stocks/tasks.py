@@ -6,6 +6,7 @@ import logging
 import time
 from datetime import datetime
 from datetime import time as dt_time
+from decimal import Decimal
 
 import pytz
 from celery import shared_task
@@ -147,9 +148,7 @@ def sync_single_stock_intraday(self, symbol, interval="1m", period="1d"):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def execute_trading_bots(  # noqa: PLR0912, PLR0915
-    self, stock_symbol: str | None = None
-):
+def execute_trading_bots(self, stock_symbol: str | None = None):
     """
     Celery task to execute trading bots for price updates.
 
@@ -250,7 +249,7 @@ def execute_trading_bots(  # noqa: PLR0912, PLR0915
             f"{results['trades_executed']} trades executed"
         )
 
-        return results  # noqa: TRY300
+        return results
 
     except Exception as exc:
         logger.exception("Trading bot execution task failed")
@@ -789,3 +788,127 @@ def is_market_open():
         return False
     else:
         return is_open
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=600)
+def run_bot_simulation(self, simulation_run_id: str):
+    """
+    Celery task to run bot simulation.
+
+    Args:
+        simulation_run_id: UUID of BotSimulationRun instance
+
+    Returns:
+        Dict with execution results
+    """
+    from bot_simulations.models import BotSimulationRun
+    from bot_simulations.simulation.data_splitter import DataSplitter
+    from bot_simulations.simulation.engine import SimulationEngine
+    from bot_simulations.simulation.signal_analyzer import SignalProductivityAnalyzer
+    from bot_simulations.simulation.validator import ValidationComparator
+
+    try:
+        logger.info(f"Starting bot simulation task: {simulation_run_id}")
+
+        # Get simulation run
+        try:
+            simulation_run = BotSimulationRun.objects.get(id=simulation_run_id)
+        except BotSimulationRun.DoesNotExist:
+            logger.exception("Simulation run not found")
+            return {
+                "status": "error",
+                "message": f"Simulation run {simulation_run_id} not found",
+            }
+
+        # Check if already running or completed
+        if simulation_run.status in ["running", "completed"]:
+            logger.warning(
+                f"Simulation {simulation_run_id} already {simulation_run.status}"
+            )
+            return {
+                "status": simulation_run.status,
+                "message": f"Simulation already {simulation_run.status}",
+            }
+
+        # Create simulation engine
+        engine = SimulationEngine(simulation_run)
+
+        # Run simulation
+        result = engine.run()
+
+        # After simulation, run validation and signal analysis
+        if result.get("status") == "completed":
+            logger.info("Running validation and signal analysis...")
+
+            # Get validation data
+            data_splitter = DataSplitter(float(simulation_run.data_split_ratio))
+            stocks = list(simulation_run.stocks.all())
+            split_result = data_splitter.split_data(stocks)
+
+            # Run validation and analysis for each bot
+            for bot_config in simulation_run.bot_configs.all():
+                try:
+                    # Validation comparison
+                    validator = ValidationComparator(
+                        bot_config, split_result["validation_data"]
+                    )
+                    validator.compare()
+
+                    # Signal productivity analysis
+                    analyzer = SignalProductivityAnalyzer(bot_config)
+                    signal_result = analyzer.analyze()
+
+                    # Store results (will be created by engine or here)
+                    from bot_simulations.models import BotSimulationResult
+
+                    result_obj, created = BotSimulationResult.objects.get_or_create(
+                        simulation_config=bot_config,
+                        defaults={
+                            "total_profit": Decimal("0.00"),
+                            "total_trades": 0,
+                            "win_rate": Decimal("0.00"),
+                            "signal_productivity": signal_result.get(
+                                "signal_productivity", {}
+                            ),
+                        },
+                    )
+
+                    if not created:
+                        result_obj.signal_productivity = signal_result.get(
+                            "signal_productivity", {}
+                        )
+                        result_obj.save()
+
+                except Exception:
+                    logger.exception("Error analyzing bot")
+                    continue
+
+        logger.info(f"Bot simulation task completed: {simulation_run_id}")
+        return {
+            "status": "success",
+            "simulation_run_id": simulation_run_id,
+            "result": result,
+        }
+
+    except Exception as exc:
+        logger.exception(f"Bot simulation task failed: {simulation_run_id}")
+
+        # Update simulation run status
+        try:
+            simulation_run = BotSimulationRun.objects.get(id=simulation_run_id)
+            simulation_run.status = "failed"
+            simulation_run.error_message = str(exc)
+            simulation_run.save()
+        except (ValueError, TypeError, AttributeError) as save_error:
+            logger.warning("Failed to save error message", exc_info=save_error)
+
+        # Retry the task if we haven't exceeded max retries
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying task in {self.default_retry_delay} seconds...")
+            raise self.retry(exc=exc) from exc
+
+        return {
+            "status": "error",
+            "message": str(exc),
+            "simulation_run_id": simulation_run_id,
+        }

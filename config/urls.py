@@ -28,6 +28,8 @@ urlpatterns = [
     path("api/v1/users/support/", create_support_request, name="support_request"),
     path("api/v1/", include("users.urls")),
     path("api/v1/stocks/", include("stocks.urls")),
+    path("api/v1/", include("bot_simulations.urls")),
+    path("api/v1/celery/", include("config.celery_urls")),
 ]
 
 # Serve media files during development

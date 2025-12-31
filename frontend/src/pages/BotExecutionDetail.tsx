@@ -2614,7 +2614,9 @@ const BotExecutionDetail: React.FC = () => {
                     <div className="space-y-2">
                       {mlSignals.map((signal: any, idx: number) => {
                         const isTransformer =
-                          signal.metadata?.model_type?.includes("Transformer") ||
+                          signal.metadata?.model_type?.includes(
+                            "Transformer"
+                          ) ||
                           signal.model_name?.includes("Transformer") ||
                           signal.model_name?.includes("PatchTST") ||
                           signal.model_name?.includes("Informer") ||
@@ -2653,32 +2655,54 @@ const BotExecutionDetail: React.FC = () => {
                             <div className="space-y-2 text-xs">
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="flex justify-between">
-                                  <span className="text-gray-400">Confidence:</span>
+                                  <span className="text-gray-400">
+                                    Confidence:
+                                  </span>
                                   <span className="text-white font-medium">
-                                    {((signal.confidence || 0) * 100).toFixed(1)}%
+                                    {((signal.confidence || 0) * 100).toFixed(
+                                      1
+                                    )}
+                                    %
                                   </span>
                                 </div>
                                 {signal.predicted_gain !== undefined && (
                                   <div className="flex justify-between">
-                                    <span className="text-gray-400">Pred. Gain:</span>
+                                    <span className="text-gray-400">
+                                      Pred. Gain:
+                                    </span>
                                     <span className="text-green-400 font-medium">
-                                      +{((signal.predicted_gain || 0) * 100).toFixed(2)}%
+                                      +
+                                      {(
+                                        (signal.predicted_gain || 0) * 100
+                                      ).toFixed(2)}
+                                      %
                                     </span>
                                   </div>
                                 )}
                                 {signal.predicted_loss !== undefined && (
                                   <div className="flex justify-between">
-                                    <span className="text-gray-400">Pred. Loss:</span>
+                                    <span className="text-gray-400">
+                                      Pred. Loss:
+                                    </span>
                                     <span className="text-red-400 font-medium">
-                                      -{((signal.predicted_loss || 0) * 100).toFixed(2)}%
+                                      -
+                                      {(
+                                        (signal.predicted_loss || 0) * 100
+                                      ).toFixed(2)}
+                                      %
                                     </span>
                                   </div>
                                 )}
                                 {signal.gain_probability !== undefined && (
                                   <div className="flex justify-between">
-                                    <span className="text-gray-400">Gain Prob:</span>
+                                    <span className="text-gray-400">
+                                      Gain Prob:
+                                    </span>
                                     <span className="text-white font-medium">
-                                      {((signal.gain_probability || 0) * 100).toFixed(1)}%
+                                      {(
+                                        (signal.gain_probability || 0) * 100
+                                      ).toFixed(1)}
+                                      %
                                     </span>
                                   </div>
                                 )}
@@ -2691,7 +2715,9 @@ const BotExecutionDetail: React.FC = () => {
                                   </p>
                                   {signal.metadata.sequence_length && (
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-500">Sequence Length:</span>
+                                      <span className="text-gray-500">
+                                        Sequence Length:
+                                      </span>
                                       <span className="text-gray-300">
                                         {signal.metadata.sequence_length}
                                       </span>
@@ -2699,15 +2725,20 @@ const BotExecutionDetail: React.FC = () => {
                                   )}
                                   {signal.metadata.prediction_horizon && (
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-500">Prediction Horizon:</span>
+                                      <span className="text-gray-500">
+                                        Prediction Horizon:
+                                      </span>
                                       <span className="text-gray-300">
-                                        {signal.metadata.prediction_horizon} days
+                                        {signal.metadata.prediction_horizon}{" "}
+                                        days
                                       </span>
                                     </div>
                                   )}
                                   {signal.metadata.rl_algorithm && (
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-500">RL Algorithm:</span>
+                                      <span className="text-gray-500">
+                                        RL Algorithm:
+                                      </span>
                                       <span className="text-gray-300">
                                         {signal.metadata.rl_algorithm.toUpperCase()}
                                       </span>
@@ -2715,9 +2746,13 @@ const BotExecutionDetail: React.FC = () => {
                                   )}
                                   {signal.metadata.use_dummy !== undefined && (
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-500">Mode:</span>
+                                      <span className="text-gray-500">
+                                        Mode:
+                                      </span>
                                       <span className="text-yellow-400">
-                                        {signal.metadata.use_dummy ? "Dummy" : "Trained"}
+                                        {signal.metadata.use_dummy
+                                          ? "Dummy"
+                                          : "Trained"}
                                       </span>
                                     </div>
                                   )}
@@ -3112,6 +3147,93 @@ const BotExecutionDetail: React.FC = () => {
           ),
         });
       }
+    }
+
+    // Step 9.5: Signal Persistence (if applicable)
+    if (
+      execution.persistence_met !== null ||
+      execution.persistence_count !== null ||
+      (execution.persistence_signal_history &&
+        execution.persistence_signal_history.length > 0)
+    ) {
+      const persistenceMet = execution.persistence_met;
+      const persistenceCount = execution.persistence_count;
+      const persistenceHistory = execution.persistence_signal_history || [];
+
+      steps.push({
+        id: "persistence",
+        title: "Signal Persistence",
+        description: persistenceMet
+          ? `Persistence criteria met (${persistenceCount} ticks/minutes)`
+          : `Persistence criteria not met (${
+              persistenceCount || 0
+            } ticks/minutes)`,
+        icon: <Activity className="w-5 h-5" />,
+        status: persistenceMet ? "completed" : "pending",
+        timestamp: signalTimestamp.toISOString(),
+        data: {
+          persistence_met: persistenceMet,
+          persistence_count: persistenceCount,
+          persistence_history: persistenceHistory,
+        },
+        details: (
+          <div className="mt-2 space-y-3">
+            <div className="bg-gray-700/50 rounded p-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-300">
+                  Persistence Status
+                </span>
+                <span
+                  className={`text-sm font-semibold ${
+                    persistenceMet ? "text-green-400" : "text-yellow-400"
+                  }`}
+                >
+                  {persistenceMet ? "✓ Met" : "⏳ Not Met"}
+                </span>
+              </div>
+              {persistenceCount !== null && (
+                <div className="text-xs text-gray-400 mt-1">
+                  Count: {persistenceCount} ticks/minutes
+                </div>
+              )}
+            </div>
+
+            {persistenceHistory.length > 0 && (
+              <div className="bg-gray-700/50 rounded p-3">
+                <p className="text-sm font-medium text-gray-300 mb-2">
+                  Signal History ({persistenceHistory.length} entries)
+                </p>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {persistenceHistory
+                    .slice(-10)
+                    .map((entry: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="text-xs text-gray-400 flex justify-between items-center py-1 border-b border-gray-600/50"
+                      >
+                        <span className="capitalize">
+                          {entry.action || "hold"}
+                        </span>
+                        <span className="text-gray-500">
+                          {entry.timestamp
+                            ? new Date(entry.timestamp).toLocaleTimeString()
+                            : `Tick ${
+                                entry.tick_number || entry.counter || idx + 1
+                              }`}
+                        </span>
+                      </div>
+                    ))}
+                  {persistenceHistory.length > 10 && (
+                    <div className="text-xs text-gray-500 text-center pt-1">
+                      ... and {persistenceHistory.length - 10} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ),
+      });
     }
 
     // Step 10: Final Decision

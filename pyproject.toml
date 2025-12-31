@@ -18,6 +18,7 @@ dependencies = [
     "yfinance>=0.2.40",
     "celery>=5.4.0",
     "django-celery-beat>=2.7.0",
+    "django-celery-results>=2.5.0",
     "django-simple-history>=3.5.1",
     "django-jazzmin>=2.6.1",
 ]
@@ -184,6 +185,12 @@ ignore = [
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "INT001",  #
     "G004",    # Use f-strings for string interpolation
+
+    # Exception handling
+    "TRY401",  # Redundant exception object included in `logging.exception` call
+    "TRY300",  # Consider moving this statement to an `else` block (style suggestion)
+    "SLF001",  # Private member accessed (intentional for internal APIs)
+    "PLR0915", # Too many statements (acceptable for complex business logic)
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -223,6 +230,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "PLR0912", # Too many branches (management commands can be complex)
     "PLR0915", # Too many statements (management commands can be complex)
 ]
+
+[tool.ruff.lint.pylint]
+# Increase max branches from default 12 to 35 for complex trading bot logic
+max-branches = 35
+# Increase max return statements from default 6 to 12 for complex trading bot logic
+max-returns = 12
 
 [tool.ruff.lint.isort]
 # Django-specific isort configuration

@@ -4,7 +4,8 @@ Main orchestration for trading bot analysis and execution.
 """
 
 import logging
-from datetime import timedelta
+import math
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -23,6 +24,7 @@ from .ml_models.models import (
     TransformerRLModel,
 )
 from .models import (
+    BotPortfolio,
     BotSignalHistory,
     MLModel,
     Order,
@@ -34,6 +36,7 @@ from .models import (
 )
 from .risk_manager import RiskManager
 from .rule_engine import RuleEvaluator
+from .signal_persistence import SignalPersistenceTracker
 from .signals import SignalAggregator
 
 logger = logging.getLogger(__name__)
@@ -52,6 +55,13 @@ class TradingBot:
         self.bot_config = bot_config
         self.user = bot_config.user
         self.risk_manager = RiskManager(bot_config)
+        # Initialize signal persistence tracker if enabled
+        self.signal_persistence_tracker = None
+        if bot_config.signal_persistence_type and bot_config.signal_persistence_value:
+            self.signal_persistence_tracker = SignalPersistenceTracker(
+                persistence_type=bot_config.signal_persistence_type,
+                persistence_value=bot_config.signal_persistence_value,
+            )
 
     def run_analysis(self, stock: Stock | None = None) -> dict:
         """
@@ -73,7 +83,22 @@ class TradingBot:
             "skipped": [],
         }
 
-        stocks_to_analyze = [stock] if stock else self.bot_config.assigned_stocks.all()
+        # Get assigned stocks
+        if stock:
+            assigned_stocks = [stock]
+        else:
+            assigned_stocks = list(self.bot_config.assigned_stocks.all())
+
+        # Get portfolio holdings (stocks bot currently holds)
+        portfolio_holdings = BotPortfolio.objects.filter(
+            bot_config=self.bot_config,
+            quantity__gt=0,
+        ).select_related("stock")
+        portfolio_stocks = [holding.stock for holding in portfolio_holdings]
+
+        # Combine and deduplicate (if stock is both assigned and in portfolio, analyze once)
+        all_stocks = list(set(assigned_stocks + portfolio_stocks))
+        stocks_to_analyze = all_stocks
 
         for stock_item in stocks_to_analyze:
             try:
@@ -156,12 +181,13 @@ class TradingBot:
 
         return results
 
-    def analyze_stock(self, stock: Stock) -> dict:
+    def analyze_stock(self, stock: Stock, timestamp: datetime | None = None) -> dict:
         """
         Analyze a single stock using ML models, social/news analysis, indicators, patterns, and signal aggregation.
 
         Args:
             stock: Stock instance to analyze
+            timestamp: Optional timestamp for signal persistence tracking (for simulations)
 
         Returns:
             Dictionary with analysis results
@@ -270,7 +296,7 @@ class TradingBot:
                 )
             else:
                 # For sell, get existing position
-                bot_positions = self.risk_manager._get_bot_positions(stock)  # noqa: SLF001
+                bot_positions = self.risk_manager._get_bot_positions(stock)
                 final_position_size = sum(pos.quantity for pos in bot_positions)
                 if final_position_size > 0:
                     final_risk_score = float(
@@ -295,6 +321,27 @@ class TradingBot:
         if final_action == "hold":
             final_action = "skip"
 
+        # Check signal persistence if enabled
+        persistence_state = None
+        if self.signal_persistence_tracker:
+            # Use provided timestamp or current time
+            check_timestamp = timestamp if timestamp else timezone.now()
+            persistence_state = self.signal_persistence_tracker.check_signal(
+                final_action, timestamp=check_timestamp
+            )
+            # If persistence not met, change action to skip/hold
+            if not persistence_state["should_execute"]:
+                original_action = final_action
+                final_action = "skip"
+                aggregated_result["reason"] = (
+                    f"Signal persistence not met: {persistence_state['current_count']}/"
+                    f"{persistence_state['required_value']} "
+                    f"({persistence_state['signal']}). Original signal: {original_action}"
+                )
+                logger.debug(
+                    f"Persistence not met for {stock.symbol}: {persistence_state}"
+                )
+
         # Store signal history
         self._store_signal_history(
             stock=stock,
@@ -310,10 +357,11 @@ class TradingBot:
             final_decision=final_action,
             decision_confidence=aggregated_result.get("confidence", 0.0),
             risk_score=final_risk_score,
+            persistence_state=persistence_state,
         )
 
         # Prepare result
-        return {
+        result = {
             "action": final_action,
             "reason": aggregated_result.get("reason", "Signal aggregation result"),
             "indicators": indicators_data,
@@ -323,10 +371,13 @@ class TradingBot:
             "social_signals": social_signals,
             "news_signals": news_signals,
             "aggregated_signal": aggregated_result,
-            "position_size": float(final_position_size)
-            if final_position_size
-            else None,
+            "position_size": int(final_position_size) if final_position_size else None,
         }
+        # Add persistence state to result
+        if persistence_state:
+            result["persistence_state"] = persistence_state
+
+        return result
 
     def evaluate_buy_signals(
         self,
@@ -388,7 +439,7 @@ class TradingBot:
             "risk_score": risk_score,
         }
 
-    def evaluate_sell_signals(  # noqa: PLR0911
+    def evaluate_sell_signals(
         self,
         price_data: list[dict],
         indicators_data: dict,
@@ -408,7 +459,7 @@ class TradingBot:
             Dictionary with should_sell, reason, etc.
         """
         # Check if bot has position in this stock
-        bot_positions = self.risk_manager._get_bot_positions(stock)  # noqa: SLF001
+        bot_positions = self.risk_manager._get_bot_positions(stock)
         if not bot_positions:
             return {"should_sell": False, "reason": "No position to sell"}
 
@@ -510,19 +561,51 @@ class TradingBot:
 
         current_price = latest_tick.price
 
-        # Calculate quantity
+        # Calculate quantity (always integer)
         if action == "buy":
             stop_loss_price = None
             if self.bot_config.stop_loss_percent:
                 stop_loss_pct = self.bot_config.stop_loss_percent / Decimal("100.00")
                 stop_loss_price = current_price * (Decimal("1.00") - stop_loss_pct)
-            quantity = self.risk_manager.calculate_position_size(
+            quantity_int = self.risk_manager.calculate_position_size(
                 stock, current_price, stop_loss_price
             )
+
+            # Additional cash alignment check
+            if quantity_int > 0:
+                max_affordable = int(self.bot_config.cash_balance / current_price)
+                if max_affordable < quantity_int:
+                    logger.warning(
+                        f"Position size {quantity_int} exceeds affordable {max_affordable}, reducing"
+                    )
+                    quantity_int = max_affordable
+                    if quantity_int <= 0:
+                        logger.warning("Insufficient cash for even 1 share")
+                        return None
+
+            quantity = Decimal(str(quantity_int))
         else:
-            # For sell, get existing position quantity
-            bot_positions = self.risk_manager._get_bot_positions(stock)  # noqa: SLF001
-            quantity = sum(pos.quantity for pos in bot_positions)
+            # For sell, get existing position quantity and calculate sell quantity
+            bot_positions = self.risk_manager._get_bot_positions(stock)
+            total_quantity = sum(pos.quantity for pos in bot_positions)
+
+            if total_quantity <= 0:
+                logger.warning(f"No position to sell for {stock.symbol}")
+                return None
+
+            # Calculate sell quantity based on risk/confidence (partial sell support)
+            # For now, sell all, but this can be refined based on analysis_result
+            sell_percentage = Decimal("1.00")  # Default: sell all
+            if analysis_result.get("position_size"):
+                # If analysis suggests partial sell, use that
+                suggested_sell = analysis_result.get("position_size")
+                if isinstance(suggested_sell, int | float):
+                    sell_percentage = Decimal(str(suggested_sell))
+
+            # Round down to integer
+            quantity_int = math.floor(total_quantity * sell_percentage)
+            quantity_int = max(0, min(quantity_int, total_quantity))
+            quantity = Decimal(str(quantity_int))
 
         # Validate trade
         is_valid, reason = self.risk_manager.validate_trade(
@@ -532,7 +615,7 @@ class TradingBot:
             logger.warning(f"Trade validation failed: {reason}")
             return None
 
-        # Create order
+        # Create order (quantity will be converted to integer in execute)
         order = Order.objects.create(
             user=self.user,
             stock=stock,
@@ -561,6 +644,19 @@ class TradingBot:
         else:
             patterns_dict = patterns_data
 
+        # Extract persistence state from analysis result
+        persistence_state = analysis_result.get("persistence_state")
+        persistence_met = None
+        persistence_count = None
+        persistence_signal_history = None
+        if persistence_state:
+            persistence_met = persistence_state.get("persistence_met", False)
+            persistence_count = persistence_state.get("current_count", 0)
+            if self.signal_persistence_tracker:
+                persistence_signal_history = (
+                    self.signal_persistence_tracker.get_signal_history()
+                )
+
         TradingBotExecution.objects.create(
             bot_config=self.bot_config,
             stock=stock,
@@ -569,6 +665,9 @@ class TradingBot:
             indicators_data=analysis_result.get("indicators", {}),
             patterns_detected=patterns_dict,
             risk_score=analysis_result.get("risk_score"),
+            persistence_met=persistence_met,
+            persistence_count=persistence_count,
+            persistence_signal_history=persistence_signal_history or [],
             executed_order=order,
         )
 
@@ -782,7 +881,7 @@ class TradingBot:
             for tick in ticks
         ]
 
-    def _calculate_indicators(self, price_data: list[dict]) -> dict:  # noqa: PLR0912, PLR0915
+    def _calculate_indicators(self, price_data: list[dict]) -> dict:  # noqa: PLR0912
         """Calculate indicators based on bot configuration."""
         indicators_data = {}
 
@@ -1268,6 +1367,7 @@ class TradingBot:
         final_decision: str,
         decision_confidence: float,
         risk_score: float | None,
+        persistence_state: dict | None = None,
     ) -> None:
         """Store signal history for transparency."""
         try:
@@ -1278,6 +1378,14 @@ class TradingBot:
                 if price_data
                 else []
             )
+
+            # Include persistence state in aggregated signal if available
+            aggregated_signal_with_persistence = aggregated_signal.copy()
+            if persistence_state:
+                aggregated_signal_with_persistence["persistence_state"] = (
+                    persistence_state
+                )
+
             BotSignalHistory.objects.create(
                 bot_config=self.bot_config,
                 stock=stock,
@@ -1301,7 +1409,7 @@ class TradingBot:
                     "patterns": pattern_signals,
                     "count": len(pattern_signals),
                 },
-                aggregated_signal=aggregated_signal,
+                aggregated_signal=aggregated_signal_with_persistence,
                 final_decision=final_decision,
                 decision_confidence=Decimal(str(decision_confidence))
                 * Decimal("100.0"),

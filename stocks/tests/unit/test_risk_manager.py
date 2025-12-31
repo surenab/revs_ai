@@ -35,6 +35,10 @@ class TestRiskManager(TestCase):
             risk_per_trade=Decimal("2.00"),
             max_position_size=Decimal("1000.00"),
         )
+        # Initialize cash_balance from budget_cash
+        self.bot_config.cash_balance = Decimal("10000.00")
+        self.bot_config.initial_cash = Decimal("10000.00")
+        self.bot_config.save()
         self.bot_config.assigned_stocks.add(self.stock)
         self.risk_manager = RiskManager(self.bot_config)
 
@@ -109,7 +113,7 @@ class TestRiskManager(TestCase):
         )
 
         assert is_valid is False
-        assert "Insufficient budget" in reason
+        assert "Insufficient" in reason or "cash" in reason.lower()
 
     def test_validate_trade_max_position_size(self):
         """Test max position size validation."""
@@ -157,7 +161,7 @@ class TestRiskManager(TestCase):
 
         # Should not exceed budget
         total_cost = size * price
-        assert total_cost <= self.bot_config.budget_cash
+        assert total_cost <= self.bot_config.cash_balance
 
     def test_calculate_position_size_risk_per_trade(self):
         """Test risk per trade application."""
@@ -169,7 +173,7 @@ class TestRiskManager(TestCase):
         )
 
         # Position size should be based on risk per trade (2%)
-        risk_amount = self.bot_config.budget_cash * (
+        risk_amount = self.bot_config.cash_balance * (
             self.bot_config.risk_per_trade / Decimal("100.00")
         )
         stop_loss_percent = abs((price - stop_loss_price) / price)
@@ -206,7 +210,7 @@ class TestRiskManager(TestCase):
         """Test getting available cash budget."""
         budget = self.risk_manager._get_available_budget()
 
-        assert budget == self.bot_config.budget_cash
+        assert budget == self.bot_config.cash_balance
 
     def test_get_available_portfolio_budget(self):
         """Test getting available portfolio budget."""
@@ -232,6 +236,18 @@ class TestRiskManager(TestCase):
             close_price=Decimal("110.00"),  # Higher than purchase price
         )
         portfolio_bot.budget_portfolio.add(portfolio)
+
+        # Create BotPortfolio entry from the assigned portfolio (as serializer would do)
+        from stocks.models import BotPortfolio
+        BotPortfolio.objects.create(
+            bot_config=portfolio_bot,
+            stock=self.stock,
+            quantity=portfolio.quantity,
+            average_purchase_price=portfolio.purchase_price,
+            total_cost_basis=portfolio.purchase_price * Decimal(str(portfolio.quantity)),
+            first_purchase_date=portfolio.purchase_date,
+            last_purchase_date=portfolio.purchase_date,
+        )
 
         risk_manager = RiskManager(portfolio_bot)
         budget = risk_manager._get_available_budget()

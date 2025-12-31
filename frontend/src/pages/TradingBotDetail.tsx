@@ -21,7 +21,6 @@ import {
   Shield,
   LineChart,
   Layers,
-  History,
   FileText,
   Maximize,
 } from "lucide-react";
@@ -48,6 +47,8 @@ import {
 import { useIndicatorThresholds } from "../contexts/IndicatorThresholdsContext";
 import BotSignalHistoryTab from "../components/bots/BotSignalHistoryTab";
 import StockPriceTooltip from "../components/bots/StockPriceTooltip";
+import BotPortfolioTab from "../components/bots/BotPortfolioTab";
+import BotDetailsTabs from "../components/bots/BotDetailsTabs";
 
 const TradingBotDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -59,7 +60,12 @@ const TradingBotDetail: React.FC = () => {
   const [performance, setPerformance] = useState<BotPerformance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "executions" | "performance" | "signals" | "orders"
+    | "overview"
+    | "executions"
+    | "performance"
+    | "signals"
+    | "orders"
+    | "portfolio"
   >("overview");
   const [botOrders, setBotOrders] = useState<Order[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
@@ -318,42 +324,11 @@ const TradingBotDetail: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-700 mb-4 sm:mb-6 overflow-x-auto">
-          <div className="flex gap-2 sm:gap-4 min-w-max sm:min-w-0">
-            {(
-              [
-                "overview",
-                "executions",
-                "performance",
-                "signals",
-                "orders",
-              ] as const
-            ).map((tab) => {
-              const tabIcons = {
-                overview: Activity,
-                executions: Clock,
-                performance: BarChart3,
-                signals: History,
-                orders: FileText,
-              };
-              const Icon = tabIcons[tab];
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-3 sm:px-4 py-2 sm:py-3 border-b-2 transition-colors capitalize font-medium text-sm sm:text-base whitespace-nowrap flex items-center gap-2 ${
-                    activeTab === tab
-                      ? "border-blue-500 text-blue-400"
-                      : "border-transparent text-gray-300 hover:text-white"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <BotDetailsTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          variant="page"
+        />
 
         {/* Content */}
         <motion.div
@@ -389,6 +364,14 @@ const TradingBotDetail: React.FC = () => {
               orders={botOrders}
               isLoading={isLoadingOrders}
               onRefresh={() => fetchBotOrders(bot.id)}
+            />
+          )}
+          {activeTab === "portfolio" && bot && (
+            <BotPortfolioTab
+              botId={bot.id}
+              botCashBalance={bot.cash_balance}
+              botTotalEquity={bot.total_equity}
+              botPortfolioValue={bot.portfolio_value}
             />
           )}
         </motion.div>
@@ -529,7 +512,7 @@ const BotOverviewTab: React.FC<{
         </div>
         <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
           <h3 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
-            Budget Amount
+            Initial Budget
           </h3>
           <p className="text-xl sm:text-2xl font-bold text-white break-words">
             {bot.budget_type === "cash"
@@ -552,6 +535,97 @@ const BotOverviewTab: React.FC<{
           <p className="text-xl sm:text-2xl font-bold text-white">
             {bot.risk_per_trade}%
           </p>
+        </div>
+      </div>
+
+      {/* Bot Portfolio & Cash Status */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">
+          Portfolio & Cash Status
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Current Cash
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.cash_balance || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Initial Cash
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.initial_cash || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Portfolio Value
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.portfolio_value || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Initial Portfolio Value
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.initial_portfolio_value || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Total Equity
+            </h4>
+            <p
+              className={`text-lg sm:text-xl font-bold ${(() => {
+                const totalEquity = Number(bot.total_equity || 0);
+                const initialCash = Number(bot.initial_cash || 0);
+                const initialPortfolioValue = Number(
+                  bot.initial_portfolio_value || 0
+                );
+                const initialTotal = initialCash + initialPortfolioValue;
+                return !isNaN(totalEquity) &&
+                  !isNaN(initialTotal) &&
+                  totalEquity >= initialTotal
+                  ? "text-green-400"
+                  : "text-red-400";
+              })()}`}
+            >
+              $
+              {(() => {
+                const totalEquity = Number(bot.total_equity || 0);
+                return isNaN(totalEquity) ? "0.00" : totalEquity.toFixed(2);
+              })()}
+            </p>
+            {bot.initial_cash !== undefined &&
+              bot.initial_portfolio_value !== undefined && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {(() => {
+                    const totalEquity = Number(bot.total_equity || 0);
+                    const initialCash = Number(bot.initial_cash || 0);
+                    const initialPortfolioValue = Number(
+                      bot.initial_portfolio_value || 0
+                    );
+                    const initialTotal = initialCash + initialPortfolioValue;
+                    const gainLoss = totalEquity - initialTotal;
+
+                    if (
+                      isNaN(gainLoss) ||
+                      isNaN(totalEquity) ||
+                      isNaN(initialTotal)
+                    ) {
+                      return "";
+                    }
+
+                    return `${gainLoss >= 0 ? "+" : ""}$${gainLoss.toFixed(2)}`;
+                  })()}
+                </p>
+              )}
+          </div>
         </div>
       </div>
 
@@ -1131,6 +1205,40 @@ const BotOverviewTab: React.FC<{
         </div>
       </div>
 
+      {/* Signal Persistence */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <Activity className="w-5 h-5 text-blue-400" />
+          Signal Persistence
+        </h3>
+        <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-2 border-b border-gray-600">
+            <span className="text-xs sm:text-sm text-gray-400">
+              Persistence Type
+            </span>
+            <span className="text-xs sm:text-sm font-semibold text-white capitalize">
+              {bot.signal_persistence_type
+                ? bot.signal_persistence_type === "tick_count"
+                  ? "Tick Count"
+                  : "Time Duration"
+                : "Disabled (Immediate Execution)"}
+            </span>
+          </div>
+          {bot.signal_persistence_type && bot.signal_persistence_value && (
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+              <span className="text-xs sm:text-sm text-gray-400">
+                {bot.signal_persistence_type === "tick_count"
+                  ? "Number of Ticks (N)"
+                  : "Duration in Minutes (M)"}
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-white">
+                {bot.signal_persistence_value}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Buy Rules */}
       <div>
         <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">
@@ -1250,8 +1358,8 @@ const BotOverviewTab: React.FC<{
 const BotExecutionsTab: React.FC<{
   executions: TradingBotExecution[];
   onRefresh: () => void;
-  navigate: (path: string) => void;
-}> = ({ executions, onRefresh, navigate }) => {
+  navigate?: (path: string) => void;
+}> = ({ executions, onRefresh }) => {
   const getActionIcon = (action: string) => {
     switch (action) {
       case "buy":

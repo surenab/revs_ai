@@ -60,10 +60,28 @@ CACHES = {
     }
 }
 
-# Logging for development
-LOGGING["handlers"]["console"]["level"] = "DEBUG"
-LOGGING["loggers"]["django"]["level"] = "DEBUG"
-LOGGING["loggers"]["users"]["level"] = "DEBUG"
+# Override Celery configuration for development to use localhost
+CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+
+# Logging for development - reduce verbosity
+# Set console handler to INFO to reduce noise
+LOGGING["handlers"]["console"]["level"] = "INFO"
+# Keep Django at INFO but suppress SQL queries
+LOGGING["loggers"]["django"]["level"] = "INFO"
+# Suppress SQL query debug messages - only show WARNING and above
+LOGGING["loggers"]["django.db.backends"]["level"] = "WARNING"
+LOGGING["loggers"]["django.db.backends"]["handlers"] = ["console"]
+LOGGING["loggers"]["django.db.backends"]["propagate"] = False
+# Set app loggers to INFO
+LOGGING["loggers"]["users"]["level"] = "INFO"
+# Add bot_simulations logger if not already present
+if "bot_simulations" not in LOGGING["loggers"]:
+    LOGGING["loggers"]["bot_simulations"] = {
+        "handlers": ["console", "file"],
+        "level": "INFO",
+        "propagate": False,
+    }
 
 # Development-specific settings
 INTERNAL_IPS = [

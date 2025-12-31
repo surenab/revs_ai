@@ -34,6 +34,8 @@ import {
   Gauge,
   BookOpen,
   History,
+  Package,
+  DollarSign,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type {
@@ -59,6 +61,8 @@ import { AggregationMethodSelector } from "../components/bots/AggregationMethodS
 import { RiskScorePreview } from "../components/bots/RiskScorePreview";
 import BotSignalHistoryTab from "../components/bots/BotSignalHistoryTab";
 import StockPriceTooltip from "../components/bots/StockPriceTooltip";
+import BotPortfolioTab from "../components/bots/BotPortfolioTab";
+import BotDetailsTabs from "../components/bots/BotDetailsTabs";
 import {
   TOOLTIPS,
   SIGNAL_SOURCE_WEIGHTS,
@@ -86,7 +90,12 @@ const TradingBots: React.FC = () => {
   const [isLoadingStocks, setIsLoadingStocks] = useState(false);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "executions" | "performance" | "signals" | "orders"
+    | "overview"
+    | "executions"
+    | "performance"
+    | "signals"
+    | "orders"
+    | "portfolio"
   >("overview");
   const [showExecutedOrdersModal, setShowExecutedOrdersModal] = useState(false);
   const [executedOrders, setExecutedOrders] = useState<Order[]>([]);
@@ -123,6 +132,8 @@ const TradingBots: React.FC = () => {
     risk_score_threshold: "80",
     risk_adjustment_factor: "0.40",
     risk_based_position_scaling: true,
+    signal_persistence_type: null as "tick_count" | "time_duration" | null,
+    signal_persistence_value: "",
   });
   const [mlModels, setMLModels] = useState<MLModel[]>([]);
 
@@ -265,24 +276,41 @@ const TradingBots: React.FC = () => {
         return;
       }
 
+      // Validate that at least one budget option is provided
+      const hasCash =
+        botForm.budget_cash && parseFloat(botForm.budget_cash) > 0;
+      const hasPortfolio = botForm.budget_portfolio.length > 0;
+
+      if (!hasCash && !hasPortfolio) {
+        toast.error(
+          "Please provide at least one: cash budget or portfolio positions"
+        );
+        return;
+      }
+
+      // Determine budget_type based on what's provided
+      let budgetType: "cash" | "portfolio" = "cash";
+      if (hasPortfolio && !hasCash) {
+        budgetType = "portfolio";
+      } else if (hasCash && hasPortfolio) {
+        // If both are provided, use "cash" as the primary type (backend handles both)
+        budgetType = "cash";
+      }
+
       const botData: any = {
         name: botForm.name,
-        budget_type: botForm.budget_type,
+        budget_type: budgetType,
         assigned_stocks: botForm.assigned_stocks,
         risk_per_trade: parseFloat(botForm.risk_per_trade),
       };
 
-      if (botForm.budget_type === "cash") {
-        if (!botForm.budget_cash) {
-          toast.error("Cash budget is required");
-          return;
-        }
+      // Add cash budget if provided
+      if (hasCash) {
         botData.budget_cash = parseFloat(botForm.budget_cash);
-      } else {
-        if (botForm.budget_portfolio.length === 0) {
-          toast.error("Please select portfolio positions");
-          return;
-        }
+      }
+
+      // Add portfolio positions if provided
+      if (hasPortfolio) {
         botData.budget_portfolio = botForm.budget_portfolio;
       }
 
@@ -325,6 +353,17 @@ const TradingBots: React.FC = () => {
       }
       botData.risk_based_position_scaling =
         botForm.risk_based_position_scaling || false;
+
+      // Signal persistence
+      botData.signal_persistence_type = botForm.signal_persistence_type;
+      if (botForm.signal_persistence_value) {
+        botData.signal_persistence_value = parseInt(
+          botForm.signal_persistence_value,
+          10
+        );
+      } else {
+        botData.signal_persistence_value = null;
+      }
 
       await botAPI.createBot(botData);
       toast.success("Trading bot created successfully!");
@@ -542,6 +581,8 @@ const TradingBots: React.FC = () => {
       risk_score_threshold: "80",
       risk_adjustment_factor: "1.0",
       risk_based_position_scaling: false,
+    signal_persistence_type: null,
+    signal_persistence_value: "",
     });
     setJsonFields({
       enabled_indicators: "{}",
@@ -744,6 +785,27 @@ const TradingBots: React.FC = () => {
                         </p>
                       </div>
 
+                      {/* Cash Balance */}
+                      <div className="bg-gray-800/40 rounded-lg p-3 border border-gray-700/30 hover:border-blue-500/30 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <DollarSign className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                            Cash
+                          </span>
+                        </div>
+                        <p className="text-xl font-bold text-white">
+                          $
+                          {Number(bot.cash_balance || 0).toLocaleString(
+                            "en-US",
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
                       {/* Risk per Trade */}
                       <div className="bg-gray-800/40 rounded-lg p-3 border border-gray-700/30 hover:border-blue-500/30 transition-colors">
                         <div className="flex items-center gap-2 mb-1">
@@ -754,6 +816,33 @@ const TradingBots: React.FC = () => {
                         </div>
                         <p className="text-xl font-bold text-white">
                           {bot.risk_per_trade}%
+                        </p>
+                      </div>
+                      {/* Total Equity */}
+                      <div className="bg-gray-800/40 rounded-lg p-3 border border-gray-700/30 hover:border-blue-500/30 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <TrendingUp className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                            Equity
+                          </span>
+                        </div>
+                        <p
+                          className={`text-xl font-bold ${
+                            (bot.total_equity || 0) >=
+                            (bot.initial_cash || 0) +
+                              (bot.initial_portfolio_value || 0)
+                              ? "text-green-400"
+                              : "text-red-400"
+                          }`}
+                        >
+                          $
+                          {Number(bot.total_equity || 0).toLocaleString(
+                            "en-US",
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
                         </p>
                       </div>
                     </div>
@@ -1031,68 +1120,49 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
             unit="days"
           />
 
-          {/* Budget Type */}
+          {/* Initial Budget Configuration */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Budget Type *
+              Initial Budget Configuration *
             </label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="cash"
-                  checked={botForm.budget_type === "cash"}
-                  onChange={(e) =>
-                    setBotForm({
-                      ...botForm,
-                      budget_type: e.target.value as "cash" | "portfolio",
-                    })
-                  }
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-white">Cash Budget</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="portfolio"
-                  checked={botForm.budget_type === "portfolio"}
-                  onChange={(e) =>
-                    setBotForm({
-                      ...botForm,
-                      budget_type: e.target.value as "cash" | "portfolio",
-                    })
-                  }
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-white">Portfolio Budget</span>
-              </label>
-            </div>
-          </div>
+            <p className="text-xs text-gray-400 mb-3">
+              You can set both cash and portfolio, or just one of them. At least
+              one is required.
+            </p>
+            {!botForm.budget_cash && botForm.budget_portfolio.length === 0 && (
+              <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                <p className="text-xs text-yellow-400">
+                  ⚠️ Please provide at least one: cash budget or portfolio
+                  positions
+                </p>
+              </div>
+            )}
 
-          {/* Budget Amount or Portfolio Selection */}
-          {botForm.budget_type === "cash" ? (
-            <div>
+            {/* Cash Budget */}
+            <div className="mb-4">
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Cash Budget ($) *
+                Initial Cash Budget ($)
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
-                required
                 value={botForm.budget_cash}
                 onChange={(e) =>
                   setBotForm({ ...botForm, budget_cash: e.target.value })
                 }
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                placeholder="10000.00"
+                placeholder="10000.00 (optional)"
               />
+              <p className="text-xs text-gray-400 mt-1">
+                Starting cash amount for the bot to trade with
+              </p>
             </div>
-          ) : (
+
+            {/* Portfolio Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Select Portfolio Positions *
+                Initial Portfolio Positions
               </label>
               <div className="max-h-40 overflow-y-auto border border-gray-600 rounded-lg p-2 space-y-2">
                 {availablePortfolio.length === 0 ? (
@@ -1137,8 +1207,11 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
                   ))
                 )}
               </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Select existing portfolio positions to assign to the bot
+              </p>
             </div>
-          )}
+          </div>
 
           {/* Assigned Stocks */}
           <div>
@@ -1249,9 +1322,7 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
             defaultOpen={true}
             isComplete={
               !!botForm.risk_per_trade &&
-              (botForm.budget_type === "cash"
-                ? !!botForm.budget_cash
-                : botForm.budget_portfolio.length > 0)
+              (!!botForm.budget_cash || botForm.budget_portfolio.length > 0)
             }
           >
             <div className="space-y-4">
@@ -1720,6 +1791,82 @@ const CreateBotModal: React.FC<CreateBotModalProps> = ({
             </div>
           </SectionCard>
 
+          {/* Signal Persistence Section */}
+          <SectionCard
+            title="Signal Persistence"
+            icon={Activity}
+            defaultOpen={false}
+            isComplete={
+              !botForm.signal_persistence_type ||
+              (botForm.signal_persistence_type &&
+                botForm.signal_persistence_value)
+            }
+          >
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Persistence Type
+                  <InfoTooltip tooltip="Choose how to confirm signals before execution: Tick Count (N consecutive ticks) or Time Duration (M minutes). Disabled means immediate execution." />
+                </label>
+                <select
+                  value={botForm.signal_persistence_type ?? ""}
+                  onChange={(e) => {
+                    const newType =
+                      e.target.value === ""
+                        ? null
+                        : (e.target.value as "tick_count" | "time_duration");
+                    setBotForm({
+                      ...botForm,
+                      signal_persistence_type: newType,
+                      signal_persistence_value:
+                        e.target.value === ""
+                          ? ""
+                          : botForm.signal_persistence_value,
+                    });
+                  }}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Disabled (Immediate Execution)</option>
+                  <option value="tick_count">Tick Count (N ticks)</option>
+                  <option value="time_duration">
+                    Time Duration (M minutes)
+                  </option>
+                </select>
+              </div>
+
+              {botForm.signal_persistence_type && (
+                <ThresholdInput
+                  label={
+                    botForm.signal_persistence_type === "tick_count"
+                      ? "Number of Ticks (N)"
+                      : "Duration in Minutes (M)"
+                  }
+                  icon={Activity}
+                  value={botForm.signal_persistence_value}
+                  onChange={(value) =>
+                    setBotForm({
+                      ...botForm,
+                      signal_persistence_value: String(value),
+                    })
+                  }
+                  type="number"
+                  min="1"
+                  max={
+                    botForm.signal_persistence_type === "tick_count"
+                      ? "100"
+                      : "1440"
+                  }
+                  step="1"
+                  tooltip={
+                    botForm.signal_persistence_type === "tick_count"
+                      ? "Number of consecutive ticks that must show the same signal before execution"
+                      : "Number of minutes the signal must persist before execution"
+                  }
+                />
+              )}
+            </div>
+          </SectionCard>
+
           {/* Trading Rules Section */}
           <SectionCard
             title="Trading Rules"
@@ -1839,9 +1986,21 @@ interface BotDetailsModalProps {
   bot: TradingBotConfig;
   executions: TradingBotExecution[];
   performance: BotPerformance | null;
-  activeTab: "overview" | "executions" | "performance" | "signals" | "orders";
+  activeTab:
+    | "overview"
+    | "executions"
+    | "performance"
+    | "signals"
+    | "orders"
+    | "portfolio";
   setActiveTab: (
-    tab: "overview" | "executions" | "performance" | "signals" | "orders"
+    tab:
+      | "overview"
+      | "executions"
+      | "performance"
+      | "signals"
+      | "orders"
+      | "portfolio"
   ) => void;
   onClose: () => void;
   onDelete: (bot: TradingBotConfig) => void;
@@ -1882,7 +2041,7 @@ const BotDetailsModal: React.FC<BotDetailsModalProps> = ({
         className="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-6xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 md:p-6">
+        <div className="flex-shrink-0 bg-gray-800 border-b border-gray-700 p-4 md:p-6">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
             {/* Left Section */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
@@ -1976,51 +2135,22 @@ const BotDetailsModal: React.FC<BotDetailsModalProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-700 bg-gray-800 px-3 sm:px-6 pt-3 pb-0 overflow-y-visible">
-          <div className="flex gap-1 sm:gap-2">
-            {(
-              [
-                "overview",
-                "executions",
-                "performance",
-                "signals",
-                "orders",
-              ] as const
-            ).map((tab) => {
-              const tabIcons = {
-                overview: Activity,
-                executions: Clock,
-                performance: BarChart3,
-                signals: History,
-                orders: FileText,
-              };
-              const Icon = tabIcons[tab];
-              return (
-                <button
-                  key={tab}
-                  onClick={() => {
-                    setActiveTab(tab);
-                    // Fetch orders immediately when orders tab is clicked
-                    if (tab === "orders" && bot) {
-                      onRefreshOrders();
-                    }
-                  }}
-                  className={`flex-1 sm:flex-none px-3 sm:px-6 py-3 sm:py-3.5 border-b-2 transition-all capitalize font-semibold text-sm sm:text-base whitespace-nowrap flex items-center gap-2 justify-center ${
-                    activeTab === tab
-                      ? "border-blue-500 text-blue-400 bg-blue-500/20 shadow-sm"
-                      : "border-transparent text-gray-300 hover:text-white hover:bg-gray-700/50 hover:border-gray-600"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab}
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex-shrink-0">
+          <BotDetailsTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            variant="modal"
+            onTabChange={(tab) => {
+              // Fetch orders immediately when orders tab is clicked
+              if (tab === "orders" && bot) {
+                onRefreshOrders();
+              }
+            }}
+          />
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 min-h-0">
           {activeTab === "overview" && (
             <BotOverviewTab
               bot={bot}
@@ -2047,6 +2177,14 @@ const BotDetailsModal: React.FC<BotDetailsModalProps> = ({
               orders={botOrders}
               isLoading={isLoadingOrders}
               onRefresh={onRefreshOrders}
+            />
+          )}
+          {activeTab === "portfolio" && (
+            <BotPortfolioTab
+              botId={bot.id}
+              botCashBalance={bot.cash_balance}
+              botTotalEquity={bot.total_equity}
+              botPortfolioValue={bot.portfolio_value}
             />
           )}
         </div>
@@ -2176,7 +2314,7 @@ const BotOverviewTab: React.FC<{
       </div>
 
       {/* Budget & Stocks */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
         <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
           <h3 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
             Budget Type
@@ -2187,7 +2325,7 @@ const BotOverviewTab: React.FC<{
         </div>
         <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
           <h3 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
-            Budget Amount
+            Initial Budget
           </h3>
           <p className="text-xl sm:text-2xl font-bold text-white break-words">
             {bot.budget_type === "cash"
@@ -2210,6 +2348,97 @@ const BotOverviewTab: React.FC<{
           <p className="text-xl sm:text-2xl font-bold text-white">
             {bot.risk_per_trade}%
           </p>
+        </div>
+      </div>
+
+      {/* Bot Portfolio & Cash Status */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">
+          Portfolio & Cash Status
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Current Cash
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.cash_balance || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Initial Cash
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.initial_cash || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Portfolio Value
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.portfolio_value || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Initial Portfolio Value
+            </h4>
+            <p className="text-lg sm:text-xl font-bold text-white">
+              ${Number(bot.initial_portfolio_value || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-medium text-gray-400 mb-1 sm:mb-2">
+              Total Equity
+            </h4>
+            <p
+              className={`text-lg sm:text-xl font-bold ${(() => {
+                const totalEquity = Number(bot.total_equity || 0);
+                const initialCash = Number(bot.initial_cash || 0);
+                const initialPortfolioValue = Number(
+                  bot.initial_portfolio_value || 0
+                );
+                const initialTotal = initialCash + initialPortfolioValue;
+                return !isNaN(totalEquity) &&
+                  !isNaN(initialTotal) &&
+                  totalEquity >= initialTotal
+                  ? "text-green-400"
+                  : "text-red-400";
+              })()}`}
+            >
+              $
+              {(() => {
+                const totalEquity = Number(bot.total_equity || 0);
+                return isNaN(totalEquity) ? "0.00" : totalEquity.toFixed(2);
+              })()}
+            </p>
+            {bot.initial_cash !== undefined &&
+              bot.initial_portfolio_value !== undefined && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {(() => {
+                    const totalEquity = Number(bot.total_equity || 0);
+                    const initialCash = Number(bot.initial_cash || 0);
+                    const initialPortfolioValue = Number(
+                      bot.initial_portfolio_value || 0
+                    );
+                    const initialTotal = initialCash + initialPortfolioValue;
+                    const gainLoss = totalEquity - initialTotal;
+
+                    if (
+                      isNaN(gainLoss) ||
+                      isNaN(totalEquity) ||
+                      isNaN(initialTotal)
+                    ) {
+                      return "";
+                    }
+
+                    return `${gainLoss >= 0 ? "+" : ""}$${gainLoss.toFixed(2)}`;
+                  })()}
+                </p>
+              )}
+          </div>
         </div>
       </div>
 
@@ -2774,6 +3003,38 @@ const BotOverviewTab: React.FC<{
               {bot.risk_based_position_scaling ? "Enabled" : "Disabled"}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Signal Persistence */}
+      <div>
+        <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
+          <Activity className="w-5 h-5 text-blue-400" />
+          Signal Persistence
+        </h3>
+        <div className="bg-gray-700/50 rounded-lg p-3 sm:p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2 pb-2 border-b border-gray-600">
+            <span className="text-sm text-gray-400">Persistence Type</span>
+            <span className="text-sm font-semibold text-white capitalize">
+              {bot.signal_persistence_type
+                ? bot.signal_persistence_type === "tick_count"
+                  ? "Tick Count"
+                  : "Time Duration"
+                : "Disabled (Immediate Execution)"}
+            </span>
+          </div>
+          {bot.signal_persistence_type && bot.signal_persistence_value && (
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+              <span className="text-sm text-gray-400">
+                {bot.signal_persistence_type === "tick_count"
+                  ? "Number of Ticks (N)"
+                  : "Duration in Minutes (M)"}
+              </span>
+              <span className="text-sm font-semibold text-white">
+                {bot.signal_persistence_value}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

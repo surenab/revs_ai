@@ -86,6 +86,13 @@ urlpatterns = [
         name="bot-orders",
     ),
     path("bots/<uuid:pk>/performance/", views.bot_performance, name="bot-performance"),
+    path("bots/<uuid:pk>/portfolio/", views.bot_portfolio, name="bot-portfolio"),
+    path(
+        "bots/<uuid:pk>/portfolio/lots/",
+        views.bot_portfolio_lots,
+        name="bot-portfolio-lots",
+    ),
+    path("bots/<uuid:pk>/equity/", views.bot_equity, name="bot-equity"),
     # ML Model endpoints
     path("ml-models/", views.MLModelViewSet.as_view(), name="ml-model-list"),
     path(

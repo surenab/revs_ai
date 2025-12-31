@@ -4,7 +4,7 @@
 # This script starts both Django backend and React frontend without Docker
 # Uses uv (https://github.com/astral-sh/uv) for fast Python package management
 
-set -e  # Exit on any error
+# Note: We don't use 'set -e' because we want to continue even if Redis/Celery checks fail
 
 # Colors for output
 RED='\033[0;31m'
@@ -188,10 +188,167 @@ start_react() {
     npm run dev
 }
 
+# Function to check if Redis is running
+check_redis() {
+    if command -v redis-cli &> /dev/null; then
+        if redis-cli ping > /dev/null 2>&1; then
+            return 0  # Redis is running
+        fi
+    fi
+    return 1  # Redis is not running
+}
+
+# Function to start Redis in background
+start_redis() {
+    if check_redis; then
+        print_success "Redis is already running"
+        return 0
+    fi
+
+    if ! command -v redis-server &> /dev/null; then
+        print_warning "Redis is not installed. Celery may not work properly."
+        print_warning "Install Redis with: brew install redis (macOS) or apt-get install redis-server (Linux)"
+        return 1
+    fi
+
+    print_status "Starting Redis server..."
+    redis-server --daemonize yes 2>/dev/null || {
+        # Try starting without daemonize (for some Redis versions)
+        redis-server > /dev/null 2>&1 &
+        sleep 2
+    }
+
+    # Wait and check if Redis started
+    sleep 2
+    if check_redis; then
+        print_success "Redis started successfully"
+        return 0
+    else
+        print_warning "Redis may not have started. Celery may not work properly."
+        return 1
+    fi
+}
+
+# Function to check if Celery worker is running
+check_celery_worker() {
+    if pgrep -f "celery.*worker" > /dev/null; then
+        return 0  # Celery worker is running
+    fi
+    return 1  # Celery worker is not running
+}
+
+# Function to check if Celery beat is running
+check_celery_beat() {
+    if pgrep -f "celery.*beat" > /dev/null; then
+        return 0  # Celery beat is running
+    fi
+    return 1  # Celery beat is not running
+}
+
+# Function to start Celery worker in background
+start_celery_worker() {
+    if check_celery_worker; then
+        print_success "Celery worker is already running"
+        return 0
+    fi
+
+    if ! check_redis; then
+        print_warning "Redis is not running. Starting Redis first..."
+        start_redis || {
+            print_warning "Could not start Redis. Celery worker will not start."
+            return 1
+        }
+    fi
+
+    print_status "Starting Celery worker..."
+    cd "$PROJECT_ROOT"
+    export DJANGO_SETTINGS_MODULE="config.settings.development"
+    uv run celery -A config worker --loglevel=info --queues=stock_data,celery > /tmp/celery-worker.log 2>&1 &
+    CELERY_WORKER_PID=$!
+
+    sleep 2
+
+    if check_celery_worker; then
+        print_success "Celery worker started successfully (PID: $CELERY_WORKER_PID)"
+        return 0
+    else
+        print_warning "Celery worker may not have started properly. Check /tmp/celery-worker.log"
+        return 1
+    fi
+}
+
+# Function to start Celery beat in background
+start_celery_beat() {
+    if check_celery_beat; then
+        print_success "Celery beat is already running"
+        return 0
+    fi
+
+    if ! check_redis; then
+        print_warning "Redis is not running. Starting Redis first..."
+        start_redis || {
+            print_warning "Could not start Redis. Celery beat will not start."
+            return 1
+        }
+    fi
+
+    print_status "Starting Celery beat scheduler..."
+    cd "$PROJECT_ROOT"
+    export DJANGO_SETTINGS_MODULE="config.settings.development"
+    uv run celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler > /tmp/celery-beat.log 2>&1 &
+    CELERY_BEAT_PID=$!
+
+    sleep 2
+
+    if check_celery_beat; then
+        print_success "Celery beat started successfully (PID: $CELERY_BEAT_PID)"
+        return 0
+    else
+        print_warning "Celery beat may not have started properly. Check /tmp/celery-beat.log"
+        return 1
+    fi
+}
+
 # Function to cleanup on exit
 cleanup() {
     print_warning "\nShutting down servers..."
+
+    # Kill Django and React
+    if [ ! -z "$DJANGO_PID" ]; then
+        kill $DJANGO_PID 2>/dev/null || true
+        print_status "Stopped Django server"
+    fi
+
+    if [ ! -z "$REACT_PID" ]; then
+        kill $REACT_PID 2>/dev/null || true
+        print_status "Stopped React server"
+    fi
+
+    # Kill any remaining background jobs
     jobs -p | xargs -r kill 2>/dev/null || true
+
+    # Kill Celery processes we started
+    if [ ! -z "$CELERY_WORKER_PID" ]; then
+        kill $CELERY_WORKER_PID 2>/dev/null || true
+        print_status "Stopped Celery worker"
+    fi
+
+    if [ ! -z "$CELERY_BEAT_PID" ]; then
+        kill $CELERY_BEAT_PID 2>/dev/null || true
+        print_status "Stopped Celery beat"
+    fi
+
+    # Kill any remaining Celery processes
+    pkill -f "celery.*worker" 2>/dev/null || true
+    pkill -f "celery.*beat" 2>/dev/null || true
+
+    # Note: We don't stop Redis as it might be used by other applications
+    # If you want to stop Redis, uncomment the following:
+    # if [ ! -z "$REDIS_PID" ]; then
+    #     kill $REDIS_PID 2>/dev/null || true
+    #     print_status "Stopped Redis"
+    # fi
+
     print_success "Cleanup completed"
     exit 0
 }
@@ -200,6 +357,18 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 print_header "🎯 Starting Development Servers"
+
+# Start Redis if not running
+print_status "Checking Redis..."
+start_redis || print_warning "Redis check failed, continuing anyway..."
+
+# Start Celery worker if not running
+print_status "Checking Celery worker..."
+start_celery_worker || print_warning "Celery worker check failed, continuing anyway..."
+
+# Start Celery beat if not running
+print_status "Checking Celery beat..."
+start_celery_beat || print_warning "Celery beat check failed, continuing anyway..."
 
 # Start Django server in background
 start_django &
@@ -238,6 +407,22 @@ echo -e "${CYAN}Frontend (React):${NC}     http://localhost:3000"
 echo -e "${CYAN}Backend API (Django):${NC} http://localhost:8080"
 echo -e "${CYAN}Django Admin:${NC}         http://localhost:8080/admin/"
 echo -e "${CYAN}API Endpoints:${NC}        http://localhost:8080/api/v1/"
+echo ""
+if check_redis; then
+    echo -e "${GREEN}✓ Redis:${NC}              Running"
+else
+    echo -e "${YELLOW}⚠ Redis:${NC}              Not running"
+fi
+if check_celery_worker; then
+    echo -e "${GREEN}✓ Celery Worker:${NC}       Running"
+else
+    echo -e "${YELLOW}⚠ Celery Worker:${NC}       Not running"
+fi
+if check_celery_beat; then
+    echo -e "${GREEN}✓ Celery Beat:${NC}         Running"
+else
+    echo -e "${YELLOW}⚠ Celery Beat:${NC}         Not running"
+fi
 echo ""
 echo -e "${YELLOW}Default Admin Credentials:${NC}"
 echo -e "Email: admin@example.com"

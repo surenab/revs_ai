@@ -39,12 +39,14 @@ THIRD_PARTY_APPS = [
     "rest_framework.authtoken",
     "corsheaders",
     "django_celery_beat",
+    "django_celery_results",  # Celery task result storage in database
     "simple_history",  # Model versioning and history tracking
 ]
 
 LOCAL_APPS = [
     "users.apps.UsersConfig",
     "stocks.apps.StocksConfig",
+    "bot_simulations.apps.BotSimulationsConfig",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -216,6 +218,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "django.db.backends": {
+            "handlers": ["console", "file"],
+            "level": "WARNING",  # Only show database errors, not all SQL queries
+            "propagate": False,
+        },
         "users": {
             "handlers": ["console", "file"],
             "level": "INFO",
@@ -224,6 +231,16 @@ LOGGING = {
         "stocks": {
             "handlers": ["console", "file"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "bot_simulations": {
+            "handlers": ["console", "file"],
+            "level": "DEBUG",  # Show detailed simulation logs
+            "propagate": False,
+        },
+        "bot_simulations.simulation": {
+            "handlers": ["console", "file"],
+            "level": "DEBUG",  # Show detailed simulation execution logs
             "propagate": False,
         },
         "celery": {
@@ -236,15 +253,23 @@ LOGGING = {
 
 # Celery Configuration
 CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Use database backend for task results (allows viewing in Django admin)
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_RESULT_EXTENDED = True  # Store more task metadata
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True  # Track when tasks start
+CELERY_TASK_SEND_SENT_EVENT = True  # Send events when tasks are sent
 
 # Celery Beat Configuration
+# Use DatabaseScheduler to store periodic tasks in the database
+# This allows managing tasks via Django admin
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+# Disable automatic sync of beat_schedule to database to prevent errors
+CELERY_BEAT_SYNC_EVERY = 0  # Don't auto-sync beat_schedule
 
 # Task routing
 CELERY_TASK_ROUTES = {

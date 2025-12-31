@@ -5,19 +5,28 @@ import type { TooltipDefinition } from "../../lib/botConstants";
 
 interface InfoTooltipProps {
   tooltip?: TooltipDefinition | null;
+  text?: string; // Simple text prop for basic tooltips
   icon?: React.ReactNode;
   className?: string;
   showMoreLink?: string;
+  asSpan?: boolean; // If true, render as span instead of button (for use inside buttons)
 }
 
 export const InfoTooltip: React.FC<InfoTooltipProps> = ({
   tooltip,
+  text,
   icon,
   className = "",
   showMoreLink,
+  asSpan = false,
 }) => {
+  // If text prop is provided, create a simple tooltip from it
+  const simpleTooltip: TooltipDefinition | null = text
+    ? { title: "", description: text }
+    : tooltip;
+
   // Safety check: if tooltip is undefined or null, don't render
-  if (!tooltip || !tooltip.title) {
+  if (!simpleTooltip || (!simpleTooltip.title && !simpleTooltip.description)) {
     return null;
   }
 
@@ -163,69 +172,90 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({
     };
   }, []);
 
+  const TooltipTrigger = asSpan ? "span" : "button";
+  const triggerProps = asSpan
+    ? {
+        onMouseEnter: handleMouseEnter,
+        onMouseLeave: handleMouseLeave,
+        className:
+          "text-white/60 hover:text-blue-400 transition-colors cursor-help inline-flex items-center",
+      }
+    : {
+        type: "button" as const,
+        onMouseEnter: handleMouseEnter,
+        onMouseLeave: handleMouseLeave,
+        onClick: () => setIsOpen(!isOpen),
+        className: "text-white/60 hover:text-blue-400 transition-colors",
+        "aria-label": "Show information",
+      };
+
   return (
     <div className={`relative inline-block ${className}`} ref={containerRef}>
-      <button
-        type="button"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onClick={() => setIsOpen(!isOpen)}
-        className="text-gray-400 hover:text-blue-400 transition-colors"
-        aria-label="Show information"
-      >
+      <TooltipTrigger {...triggerProps}>
         {icon || <Info className="w-4 h-4" />}
-      </button>
+      </TooltipTrigger>
       {isOpen && (
         <div
           ref={tooltipRef}
-          className={`absolute z-50 w-80 p-4 bg-gray-800 border border-gray-600 rounded-lg shadow-xl ${getPositionClasses()}`}
+          className={`absolute z-[9999] w-80 p-4 bg-gray-800 border border-gray-600 rounded-lg shadow-xl ${getPositionClasses()}`}
           style={{
             maxWidth: "min(320px, calc(100vw - 20px))", // Ensure it doesn't exceed viewport
+            zIndex: 9999, // Ensure tooltip is always on top
           }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          {tooltip?.title && (
-            <h4 className="font-semibold text-white mb-2">{tooltip.title}</h4>
+          {simpleTooltip?.title && (
+            <h4 className="font-semibold text-white mb-2">
+              {simpleTooltip.title}
+            </h4>
           )}
-          {tooltip?.description && (
-            <p className="text-sm text-gray-300 mb-2">{tooltip.description}</p>
+          {simpleTooltip?.description && (
+            <p className="text-sm text-gray-300 mb-2">
+              {simpleTooltip.description}
+            </p>
           )}
-          {tooltip.details && (
-            <p className="text-xs text-gray-400 mb-2">{tooltip.details}</p>
+          {simpleTooltip.details && (
+            <p className="text-xs text-gray-400 mb-2">
+              {simpleTooltip.details}
+            </p>
           )}
-          {tooltip.howItWorks && (
+          {simpleTooltip.howItWorks && (
             <div className="mb-2">
               <p className="text-xs font-semibold text-blue-400 mb-1">
                 How it works:
               </p>
-              <p className="text-xs text-gray-400">{tooltip.howItWorks}</p>
+              <p className="text-xs text-gray-400">
+                {simpleTooltip.howItWorks}
+              </p>
             </div>
           )}
-          {tooltip.howBotUsesIt && (
+          {simpleTooltip.howBotUsesIt && (
             <div className="mb-2">
               <p className="text-xs font-semibold text-green-400 mb-1">
                 How bot uses it:
               </p>
-              <p className="text-xs text-gray-400">{tooltip.howBotUsesIt}</p>
+              <p className="text-xs text-gray-400">
+                {simpleTooltip.howBotUsesIt}
+              </p>
             </div>
           )}
-          {tooltip.example && (
+          {simpleTooltip.example && (
             <div className="mb-2">
               <p className="text-xs font-semibold text-yellow-400 mb-1">
                 Example:
               </p>
               <p className="text-xs text-gray-400 font-mono">
-                {tooltip.example}
+                {simpleTooltip.example}
               </p>
             </div>
           )}
-          {tooltip.impact && (
+          {simpleTooltip.impact && (
             <div className="mb-2">
               <p className="text-xs font-semibold text-purple-400 mb-1">
                 Impact:
               </p>
-              <p className="text-xs text-gray-400">{tooltip.impact}</p>
+              <p className="text-xs text-gray-400">{simpleTooltip.impact}</p>
             </div>
           )}
           {showMoreLink && (

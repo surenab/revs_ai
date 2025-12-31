@@ -14,6 +14,8 @@ from users.models import UserProfile
 from users.views import create_notification
 
 from .models import (
+    BotPortfolio,
+    BotPortfolioLot,
     BotSignalHistory,
     IntradayPrice,
     MLModel,
@@ -31,6 +33,8 @@ from .models import (
 from .permissions import IsAdminRole
 from .serializers import (
     BotPerformanceSerializer,
+    BotPortfolioLotSerializer,
+    BotPortfolioSerializer,
     BotSignalHistoryListSerializer,
     BotSignalHistorySerializer,
     IntradayPriceListSerializer,
@@ -1234,7 +1238,7 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
-def execute_orders(request):  # noqa: PLR0912, PLR0915
+def execute_orders(request):
     """
     Execute pending orders (check target prices and execute if conditions are met).
     This should be called periodically (e.g., via Celery task).
@@ -1530,7 +1534,7 @@ def deactivate_bot(request, pk):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated, IsAdminRole])
-def execute_bot(request, pk):  # noqa: PLR0912, PLR0915
+def execute_bot(request, pk):
     """Manually trigger bot execution with full configuration support."""
     try:
         bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
@@ -1856,6 +1860,70 @@ def bot_performance(request, pk):
 
         serializer = BotPerformanceSerializer(performance_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
+def bot_portfolio(request, pk):
+    """Get bot portfolio holdings."""
+    try:
+        bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
+        portfolio_holdings = (
+            BotPortfolio.objects.filter(bot_config=bot_config, quantity__gt=0)
+            .select_related("stock")
+            .prefetch_related("lots")
+        )
+        serializer = BotPortfolioSerializer(portfolio_holdings, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
+def bot_portfolio_lots(request, pk):
+    """Get bot portfolio lots for a specific bot."""
+    try:
+        bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
+        stock_id = request.query_params.get("stock_id")
+
+        queryset = BotPortfolioLot.objects.filter(
+            bot_portfolio__bot_config=bot_config, remaining_quantity__gt=0
+        ).select_related("bot_portfolio", "bot_portfolio__stock", "order")
+
+        if stock_id:
+            queryset = queryset.filter(bot_portfolio__stock_id=stock_id)
+
+        # Order by purchase_price DESC for HIFO visualization
+        queryset = queryset.order_by("-purchase_price", "-purchase_date")
+
+        serializer = BotPortfolioLotSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except TradingBotConfig.DoesNotExist:
+        return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated, IsAdminRole])
+def bot_equity(request, pk):
+    """Get bot total equity (cash + portfolio value)."""
+    try:
+        bot_config = TradingBotConfig.objects.get(id=pk, user=request.user)
+        total_equity = bot_config.get_total_equity()
+        portfolio_value = bot_config.get_portfolio_value()
+
+        return Response(
+            {
+                "bot_id": str(bot_config.id),
+                "bot_name": bot_config.name,
+                "cash_balance": float(bot_config.cash_balance),
+                "portfolio_value": float(portfolio_value),
+                "total_equity": float(total_equity),
+            },
+            status=status.HTTP_200_OK,
+        )
     except TradingBotConfig.DoesNotExist:
         return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
 

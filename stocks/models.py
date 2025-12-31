@@ -584,7 +584,9 @@ class Order(models.Model):
         max_digits=12,
         decimal_places=4,
         validators=[MinValueValidator(Decimal("0.0001"))],
-        help_text=_("Number of shares to purchase"),
+        help_text=_(
+            "Number of shares to purchase (will be rounded to integer for execution)"
+        ),
     )
     target_price = models.DecimalField(
         _("target price"),
@@ -671,38 +673,77 @@ class Order(models.Model):
             logger.warning(f"Order {self.id} cannot be executed - no latest price")
             return False
 
-        # For sell orders, check if user has enough shares
-        if self.transaction_type == "sell":
-            try:
-                portfolio_entry = Portfolio.objects.get(
-                    user=self.user, stock=self.stock
-                )
-                if portfolio_entry.quantity < self.quantity:
-                    logger.warning(
-                        f"Order {self.id} cannot be executed - insufficient shares"
+        # Check if this is a bot order
+        is_bot_order = self.bot_config is not None
+
+        if is_bot_order:
+            # Bot order validation
+            bot_config = self.bot_config
+
+            # For sell orders, check if bot has enough shares
+            if self.transaction_type == "sell":
+                try:
+                    bot_portfolio = BotPortfolio.objects.get(
+                        bot_config=bot_config, stock=self.stock
                     )
-                    return False  # Insufficient shares
-            except Portfolio.DoesNotExist:
-                logger.warning(
-                    f"Order {self.id} cannot be executed - no portfolio entry"
-                )
-                return False  # No shares to sell
-
-        # For buy orders, check if user has enough cash
-        if self.transaction_type == "buy":
-            from users.models import UserProfile
-
-            try:
-                user_profile = UserProfile.objects.get(user=self.user)
-                total_cost = self.quantity * latest_price.close_price
-                if user_profile.cash < total_cost:
+                    quantity_int = int(self.quantity)
+                    if bot_portfolio.quantity < quantity_int:
+                        logger.warning(
+                            f"Order {self.id} cannot be executed - insufficient bot shares"
+                        )
+                        return False  # Insufficient shares
+                except BotPortfolio.DoesNotExist:
                     logger.warning(
-                        f"Order {self.id} cannot be executed - insufficient funds"
+                        f"Order {self.id} cannot be executed - no bot portfolio entry"
+                    )
+                    return False  # No shares to sell
+
+            # For buy orders, check if bot has enough cash
+            if self.transaction_type == "buy":
+                quantity_int = int(self.quantity)
+                total_cost = Decimal(str(quantity_int)) * latest_price.close_price
+                if bot_config.cash_balance < total_cost:
+                    logger.warning(
+                        f"Order {self.id} cannot be executed - insufficient bot cash"
                     )
                     return False  # Insufficient funds
-            except UserProfile.DoesNotExist:
-                logger.warning(f"Order {self.id} cannot be executed - no user profile")
-                return False  # No user profile
+
+        else:
+            # User order validation (existing logic)
+            # For sell orders, check if user has enough shares
+            if self.transaction_type == "sell":
+                try:
+                    portfolio_entry = Portfolio.objects.get(
+                        user=self.user, stock=self.stock
+                    )
+                    if portfolio_entry.quantity < self.quantity:
+                        logger.warning(
+                            f"Order {self.id} cannot be executed - insufficient shares"
+                        )
+                        return False  # Insufficient shares
+                except Portfolio.DoesNotExist:
+                    logger.warning(
+                        f"Order {self.id} cannot be executed - no portfolio entry"
+                    )
+                    return False  # No shares to sell
+
+            # For buy orders, check if user has enough cash
+            if self.transaction_type == "buy":
+                from users.models import UserProfile
+
+                try:
+                    user_profile = UserProfile.objects.get(user=self.user)
+                    total_cost = self.quantity * latest_price.close_price
+                    if user_profile.cash < total_cost:
+                        logger.warning(
+                            f"Order {self.id} cannot be executed - insufficient funds"
+                        )
+                        return False  # Insufficient funds
+                except UserProfile.DoesNotExist:
+                    logger.warning(
+                        f"Order {self.id} cannot be executed - no user profile"
+                    )
+                    return False  # No user profile
 
         if self.order_type == "market":
             logger.info(f"Order {self.id} can be executed - market order")
@@ -720,7 +761,7 @@ class Order(models.Model):
         )
         return False
 
-    def execute(self):  # noqa: PLR0915
+    def execute(self):
         """Execute the order and update portfolio/cash accordingly."""
         if not self.can_execute:
             logger.warning(f"Order {self.id} cannot be executed - can_execute is False")
@@ -735,85 +776,293 @@ class Order(models.Model):
         )
         # Set execution price
         execution_price = latest_price.close_price
-        total_cost = self.quantity * execution_price
+
+        # Ensure quantity is integer (round down)
+        quantity_int = int(self.quantity)
+        if quantity_int <= 0:
+            logger.warning(f"Order {self.id} has invalid quantity: {self.quantity}")
+            self.status = "cancelled"
+            self.save()
+            return False
+
+        total_cost = Decimal(str(quantity_int)) * execution_price
         logger.info(f"Order {self.id} total cost: {total_cost}")
-        # Get user profile for cash management
-        from users.models import UserProfile
 
-        user_profile = UserProfile.objects.get(user=self.user)
-        logger.info(f"Order {self.id} user profile: {user_profile.cash}")
-        # Handle buy orders
-        if self.transaction_type == "buy":
-            # Check if user has enough cash
-            if user_profile.cash < total_cost:
-                logger.warning(
-                    f"Order {self.id} cannot be executed - insufficient funds. Need: {total_cost}, Have: {user_profile.cash}"
+        # Check if this is a bot order
+        is_bot_order = self.bot_config is not None
+
+        if is_bot_order:
+            # Bot order - use bot-specific cash and portfolio
+            bot_config = self.bot_config
+
+            # Handle buy orders
+            if self.transaction_type == "buy":
+                # Cash alignment check
+                if bot_config.cash_balance < total_cost:
+                    # Reduce quantity to what's affordable
+                    max_affordable = int(bot_config.cash_balance / execution_price)
+                    if max_affordable <= 0:
+                        logger.warning(
+                            f"Order {self.id} cannot be executed - insufficient bot cash. Need: {total_cost}, Have: {bot_config.cash_balance}"
+                        )
+                        self.status = "insufficient_funds"
+                        self.save()
+                        return False
+                    quantity_int = max_affordable
+                    total_cost = Decimal(str(quantity_int)) * execution_price
+                    logger.warning(
+                        f"Order {self.id} quantity reduced to {quantity_int} due to cash constraints"
+                    )
+
+                # Deduct from bot cash
+                bot_config.cash_balance -= total_cost
+                bot_config.save(update_fields=["cash_balance"])
+                logger.info(f"Order {self.id} bot cash deducted: {total_cost}")
+
+                # Get or create BotPortfolio entry
+                bot_portfolio, created = BotPortfolio.objects.get_or_create(
+                    bot_config=bot_config,
+                    stock=self.stock,
+                    defaults={
+                        "quantity": 0,
+                        "average_purchase_price": Decimal("0.00"),
+                        "total_cost_basis": Decimal("0.00"),
+                    },
                 )
-                self.status = "insufficient_funds"
-                self.save()
-                return False  # Insufficient funds
 
-            # Deduct cash
-            user_profile.cash -= total_cost
-            user_profile.save()
-            logger.info(f"Order {self.id} cash deducted: {total_cost}")
-            # Get or create portfolio entry for this stock
-            portfolio_entry, created = Portfolio.objects.get_or_create(
-                user=self.user,
-                stock=self.stock,
-                defaults={
-                    "quantity": Decimal("0.00"),
-                    "purchase_price": execution_price,
-                    "purchase_date": timezone.now().date(),
-                },
-            )
+                # Update BotPortfolio
+                if created:
+                    bot_portfolio.quantity = quantity_int
+                    bot_portfolio.average_purchase_price = execution_price
+                    bot_portfolio.total_cost_basis = total_cost
+                    bot_portfolio.first_purchase_date = timezone.now().date()
+                    bot_portfolio.last_purchase_date = timezone.now().date()
+                else:
+                    # Calculate weighted average
+                    total_quantity = bot_portfolio.quantity + quantity_int
+                    total_cost_basis = bot_portfolio.total_cost_basis + total_cost
+                    bot_portfolio.quantity = total_quantity
+                    bot_portfolio.average_purchase_price = (
+                        total_cost_basis / Decimal(str(total_quantity))
+                        if total_quantity > 0
+                        else Decimal("0.00")
+                    )
+                    bot_portfolio.total_cost_basis = total_cost_basis
+                    bot_portfolio.last_purchase_date = timezone.now().date()
+                    if not bot_portfolio.first_purchase_date:
+                        bot_portfolio.first_purchase_date = timezone.now().date()
+                bot_portfolio.save()
 
-            # Update portfolio: add quantity and recalculate average purchase price
-            if created:
-                portfolio_entry.quantity = self.quantity
-                portfolio_entry.purchase_price = execution_price
-            else:
-                # Calculate weighted average purchase price
-                total_shares = portfolio_entry.quantity + self.quantity
-                total_value = (
-                    portfolio_entry.quantity * portfolio_entry.purchase_price
-                ) + total_cost
-                portfolio_entry.purchase_price = total_value / total_shares
-                portfolio_entry.quantity = total_shares
-
-            portfolio_entry.notes = self.notes or portfolio_entry.notes
-            portfolio_entry.order = self
-            portfolio_entry.save()
-
-        # Handle sell orders
-        elif self.transaction_type == "sell":
-            # Check if user has enough shares
-            try:
-                portfolio_entry = Portfolio.objects.get(
-                    user=self.user, stock=self.stock
+                # Create BotPortfolioLot entry
+                BotPortfolioLot.objects.create(
+                    bot_portfolio=bot_portfolio,
+                    order=self,
+                    quantity=quantity_int,
+                    purchase_price=execution_price,
+                    purchase_date=timezone.now().date(),
+                    remaining_quantity=quantity_int,
                 )
-            except Portfolio.DoesNotExist:
-                self.status = "insufficient_funds"  # No shares to sell
-                self.save()
-                return False
 
-            if portfolio_entry.quantity < self.quantity:
-                self.status = "insufficient_funds"  # Insufficient shares
-                self.save()
-                return False
+                # Also create/update user Portfolio entry (linked to bot) for shared view
+                portfolio_entry, created = Portfolio.objects.get_or_create(
+                    user=self.user,
+                    stock=self.stock,
+                    defaults={
+                        "quantity": 0,
+                        "purchase_price": execution_price,
+                        "purchase_date": timezone.now().date(),
+                    },
+                )
 
-            # Add cash from sale
-            user_profile.cash += total_cost
-            user_profile.save()
+                if created:
+                    portfolio_entry.quantity = quantity_int
+                    portfolio_entry.purchase_price = execution_price
+                else:
+                    # Calculate weighted average purchase price
+                    total_shares = portfolio_entry.quantity + quantity_int
+                    total_value = (
+                        Decimal(str(portfolio_entry.quantity))
+                        * portfolio_entry.purchase_price
+                    ) + total_cost
+                    portfolio_entry.purchase_price = total_value / Decimal(
+                        str(total_shares)
+                    )
+                    portfolio_entry.quantity = total_shares
 
-            # Update portfolio: reduce quantity
-            portfolio_entry.quantity -= self.quantity
-
-            # If quantity becomes zero or negative, delete the portfolio entry
-            if portfolio_entry.quantity <= Decimal("0.00"):
-                portfolio_entry.delete()
-            else:
+                portfolio_entry.notes = self.notes or portfolio_entry.notes
+                portfolio_entry.order = self
+                portfolio_entry.bot_config = bot_config
                 portfolio_entry.save()
+
+            # Handle sell orders with HIFO (Highest-In-First-Out) logic
+            elif self.transaction_type == "sell":
+                # Check if bot has position
+                try:
+                    bot_portfolio = BotPortfolio.objects.get(
+                        bot_config=bot_config, stock=self.stock
+                    )
+                except BotPortfolio.DoesNotExist:
+                    self.status = "insufficient_funds"  # No shares to sell
+                    self.save()
+                    return False
+
+                if bot_portfolio.quantity < quantity_int:
+                    self.status = "insufficient_funds"  # Insufficient shares
+                    self.save()
+                    return False
+
+                # HIFO: Sell from highest-priced lots first
+                # Get all lots ordered by purchase_price DESC (highest first)
+                lots = BotPortfolioLot.objects.filter(
+                    bot_portfolio=bot_portfolio, remaining_quantity__gt=0
+                ).order_by("-purchase_price", "-purchase_date")
+
+                remaining_to_sell = quantity_int
+                total_proceeds = Decimal("0.00")
+                total_cost_basis_sold = Decimal("0.00")
+
+                # Sell from highest-priced lots first
+                for lot in lots:
+                    if remaining_to_sell <= 0:
+                        break
+
+                    # Calculate how many shares to sell from this lot
+                    shares_to_sell_from_lot = min(
+                        remaining_to_sell, lot.remaining_quantity
+                    )
+
+                    # Calculate proceeds and cost basis for this lot
+                    lot_proceeds = execution_price * Decimal(
+                        str(shares_to_sell_from_lot)
+                    )
+                    lot_cost_basis = lot.purchase_price * Decimal(
+                        str(shares_to_sell_from_lot)
+                    )
+
+                    total_proceeds += lot_proceeds
+                    total_cost_basis_sold += lot_cost_basis
+
+                    # Update lot's remaining quantity
+                    lot.remaining_quantity -= shares_to_sell_from_lot
+                    lot.save()
+
+                    remaining_to_sell -= shares_to_sell_from_lot
+
+                # Add cash from sale
+                bot_config.cash_balance += total_proceeds
+                bot_config.save(update_fields=["cash_balance"])
+
+                # Update BotPortfolio
+                bot_portfolio.quantity -= quantity_int
+                bot_portfolio.total_cost_basis -= total_cost_basis_sold
+
+                # Recalculate average purchase price
+                if bot_portfolio.quantity > 0:
+                    bot_portfolio.average_purchase_price = (
+                        bot_portfolio.total_cost_basis
+                        / Decimal(str(bot_portfolio.quantity))
+                    )
+                else:
+                    bot_portfolio.average_purchase_price = Decimal("0.00")
+
+                if bot_portfolio.quantity <= 0:
+                    bot_portfolio.delete()
+                else:
+                    bot_portfolio.save()
+
+                # Update user Portfolio entry
+                try:
+                    portfolio_entry = Portfolio.objects.get(
+                        user=self.user, stock=self.stock, bot_config=bot_config
+                    )
+                    portfolio_entry.quantity -= Decimal(str(quantity_int))
+                    if portfolio_entry.quantity <= Decimal("0.00"):
+                        portfolio_entry.delete()
+                    else:
+                        portfolio_entry.save()
+                except Portfolio.DoesNotExist:
+                    pass
+
+        else:
+            # User order - use user cash and portfolio (existing logic)
+            from users.models import UserProfile
+
+            user_profile = UserProfile.objects.get(user=self.user)
+            logger.info(f"Order {self.id} user profile: {user_profile.cash}")
+
+            # Handle buy orders
+            if self.transaction_type == "buy":
+                # Check if user has enough cash
+                if user_profile.cash < total_cost:
+                    logger.warning(
+                        f"Order {self.id} cannot be executed - insufficient funds. Need: {total_cost}, Have: {user_profile.cash}"
+                    )
+                    self.status = "insufficient_funds"
+                    self.save()
+                    return False  # Insufficient funds
+
+                # Deduct cash
+                user_profile.cash -= total_cost
+                user_profile.save()
+                logger.info(f"Order {self.id} cash deducted: {total_cost}")
+
+                # Get or create portfolio entry for this stock
+                portfolio_entry, created = Portfolio.objects.get_or_create(
+                    user=self.user,
+                    stock=self.stock,
+                    defaults={
+                        "quantity": Decimal("0.00"),
+                        "purchase_price": execution_price,
+                        "purchase_date": timezone.now().date(),
+                    },
+                )
+
+                # Update portfolio: add quantity and recalculate average purchase price
+                if created:
+                    portfolio_entry.quantity = Decimal(str(quantity_int))
+                    portfolio_entry.purchase_price = execution_price
+                else:
+                    # Calculate weighted average purchase price
+                    total_shares = portfolio_entry.quantity + Decimal(str(quantity_int))
+                    total_value = (
+                        portfolio_entry.quantity * portfolio_entry.purchase_price
+                    ) + total_cost
+                    portfolio_entry.purchase_price = total_value / total_shares
+                    portfolio_entry.quantity = total_shares
+
+                portfolio_entry.notes = self.notes or portfolio_entry.notes
+                portfolio_entry.order = self
+                portfolio_entry.save()
+
+            # Handle sell orders
+            elif self.transaction_type == "sell":
+                # Check if user has enough shares
+                try:
+                    portfolio_entry = Portfolio.objects.get(
+                        user=self.user, stock=self.stock
+                    )
+                except Portfolio.DoesNotExist:
+                    self.status = "insufficient_funds"  # No shares to sell
+                    self.save()
+                    return False
+
+                if portfolio_entry.quantity < Decimal(str(quantity_int)):
+                    self.status = "insufficient_funds"  # Insufficient shares
+                    self.save()
+                    return False
+
+                # Add cash from sale
+                user_profile.cash += total_cost
+                user_profile.save()
+
+                # Update portfolio: reduce quantity
+                portfolio_entry.quantity -= Decimal(str(quantity_int))
+
+                # If quantity becomes zero or negative, delete the portfolio entry
+                if portfolio_entry.quantity <= Decimal("0.00"):
+                    portfolio_entry.delete()
+                else:
+                    portfolio_entry.save()
 
         # Mark order as executed
         self.executed_price = execution_price
@@ -848,14 +1097,22 @@ class Portfolio(models.Model):
         related_name="portfolio_entry",
         help_text=_("The order that created this portfolio entry"),
     )
+    bot_config = models.ForeignKey(
+        "TradingBotConfig",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="user_portfolio_entries",
+        help_text=_("Link to bot if created by bot (for shared view)"),
+    )
 
     # Purchase information
-    quantity = models.DecimalField(
+    quantity = models.IntegerField(
         _("quantity"),
-        max_digits=12,
-        decimal_places=4,
-        validators=[MinValueValidator(Decimal("0.0001"))],
-        help_text=_("Number of shares purchased"),
+        validators=[MinValueValidator(1)],
+        help_text=_(
+            "Number of shares purchased (must be integer, no fractional shares)"
+        ),
     )
     purchase_price = models.DecimalField(
         _("purchase price"),
@@ -896,14 +1153,14 @@ class Portfolio(models.Model):
     @property
     def total_cost(self):
         """Calculate total cost of purchase."""
-        return self.quantity * self.purchase_price
+        return Decimal(str(self.quantity)) * self.purchase_price
 
     @property
     def current_value(self):
         """Calculate current value based on latest price."""
         latest_price = self.stock.latest_price
         if latest_price:
-            return self.quantity * latest_price.close_price
+            return Decimal(str(self.quantity)) * latest_price.close_price
         return Decimal("0.00")
 
     @property
@@ -916,6 +1173,183 @@ class Portfolio(models.Model):
         """Calculate gain/loss percentage."""
         if self.total_cost > 0:
             return (self.gain_loss / self.total_cost) * 100
+        return Decimal("0.00")
+
+
+class BotPortfolio(models.Model):
+    """
+    Model for bot-specific portfolio holdings (aggregated view).
+    Tracks bot's stock positions separately from user portfolio.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bot_config = models.ForeignKey(
+        "TradingBotConfig",
+        on_delete=models.CASCADE,
+        related_name="bot_portfolio_holdings",
+        help_text=_("Trading bot that owns this portfolio position"),
+    )
+    stock = models.ForeignKey(
+        Stock, on_delete=models.CASCADE, related_name="bot_portfolio_positions"
+    )
+
+    # Holdings information (aggregated from all lots)
+    quantity = models.IntegerField(
+        _("quantity"),
+        validators=[MinValueValidator(0)],
+        help_text=_("Current holding quantity (sum of all lots, must be integer)"),
+    )
+    average_purchase_price = models.DecimalField(
+        _("average purchase price"),
+        max_digits=12,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal("0.0001"))],
+        help_text=_("Weighted average purchase price across all lots"),
+    )
+    total_cost_basis = models.DecimalField(
+        _("total cost basis"),
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Total cost of all purchases for this position"),
+    )
+
+    # Purchase date tracking
+    first_purchase_date = models.DateField(
+        _("first purchase date"),
+        null=True,
+        blank=True,
+        help_text=_("Date of first purchase for this position"),
+    )
+    last_purchase_date = models.DateField(
+        _("last purchase date"),
+        null=True,
+        blank=True,
+        help_text=_("Date of most recent purchase for this position"),
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Bot Portfolio")
+        verbose_name_plural = _("Bot Portfolios")
+        unique_together = ["bot_config", "stock"]
+        ordering = ["-last_purchase_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["bot_config", "stock"]),
+            models.Index(fields=["bot_config", "quantity"]),
+            models.Index(fields=["stock"]),
+        ]
+
+    # History tracking
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.bot_config.name} - {self.stock.symbol} ({self.quantity} shares)"
+
+    @property
+    def current_value(self):
+        """Calculate current value based on latest price."""
+        latest_price = self.stock.latest_price
+        if latest_price:
+            return Decimal(str(self.quantity)) * latest_price.close_price
+        return Decimal("0.00")
+
+    @property
+    def gain_loss(self):
+        """Calculate gain/loss amount."""
+        return self.current_value - self.total_cost_basis
+
+    @property
+    def gain_loss_percent(self):
+        """Calculate gain/loss percentage."""
+        if self.total_cost_basis > 0:
+            return (self.gain_loss / self.total_cost_basis) * 100
+        return Decimal("0.00")
+
+
+class BotPortfolioLot(models.Model):
+    """
+    Model for tracking individual purchase lots (required for HIFO sell logic).
+    Each purchase creates a new lot, allowing tracking of individual purchase prices
+    for Highest-In-First-Out (HIFO) sell strategy.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bot_portfolio = models.ForeignKey(
+        BotPortfolio,
+        on_delete=models.CASCADE,
+        related_name="lots",
+        help_text=_("Bot portfolio position this lot belongs to"),
+    )
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bot_portfolio_lot",
+        help_text=_("The order that created this lot"),
+    )
+
+    # Lot information
+    quantity = models.IntegerField(
+        _("quantity"),
+        validators=[MinValueValidator(0)],
+        help_text=_("Quantity in this lot (must be integer, no fractional shares)"),
+    )
+    purchase_price = models.DecimalField(
+        _("purchase price"),
+        max_digits=12,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal("0.0001"))],
+        help_text=_("Price per share for this lot"),
+    )
+    purchase_date = models.DateField(
+        _("purchase date"), help_text=_("When this lot was purchased")
+    )
+    remaining_quantity = models.IntegerField(
+        _("remaining quantity"),
+        validators=[MinValueValidator(0)],
+        help_text=_("Remaining quantity after any sells (must be integer)"),
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Bot Portfolio Lot")
+        verbose_name_plural = _("Bot Portfolio Lots")
+        ordering = ["-purchase_date", "-purchase_price"]
+        indexes = [
+            models.Index(fields=["bot_portfolio", "purchase_price"]),
+            models.Index(fields=["bot_portfolio", "remaining_quantity"]),
+            models.Index(fields=["order"]),
+        ]
+
+    # History tracking
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return (
+            f"{self.bot_portfolio.bot_config.name} - {self.bot_portfolio.stock.symbol} "
+            f"Lot: {self.quantity} @ ${self.purchase_price} ({self.remaining_quantity} remaining)"
+        )
+
+    @property
+    def total_cost(self):
+        """Calculate total cost of this lot."""
+        return Decimal(str(self.quantity)) * self.purchase_price
+
+    @property
+    def remaining_cost_basis(self):
+        """Calculate cost basis for remaining quantity."""
+        if self.quantity > 0:
+            return (
+                Decimal(str(self.remaining_quantity)) / Decimal(str(self.quantity))
+            ) * self.total_cost
         return Decimal("0.00")
 
 
@@ -964,6 +1398,34 @@ class TradingBotConfig(models.Model):
         help_text=_(
             "Existing portfolio positions assigned to bot (if budget_type is 'portfolio')"
         ),
+    )
+
+    # Bot-specific cash management
+    cash_balance = models.DecimalField(
+        _("cash balance"),
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Current cash available to bot for trading"),
+    )
+    initial_cash = models.DecimalField(
+        _("initial cash"),
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Initial cash allocation (for tracking)"),
+    )
+    initial_portfolio_value = models.DecimalField(
+        _("initial portfolio value"),
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Value of assigned portfolio at creation"),
     )
 
     # Stock assignment
@@ -1150,6 +1612,32 @@ class TradingBotConfig(models.Model):
         help_text=_("Sell condition rules (JSON)"),
     )
 
+    # Signal persistence
+    signal_persistence_type = models.CharField(
+        _("signal persistence type"),
+        max_length=20,
+        choices=[
+            ("tick_count", _("Tick Count")),
+            ("time_duration", _("Time Duration")),
+        ],
+        null=True,
+        blank=True,
+        help_text=_(
+            "Type of signal persistence: tick_count (N ticks) or time_duration (M minutes). "
+            "None means disabled (immediate execution)."
+        ),
+    )
+    signal_persistence_value = models.IntegerField(
+        _("signal persistence value"),
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text=_(
+            "Persistence value: N for tick count or M for minutes. "
+            "Required if signal_persistence_type is set."
+        ),
+    )
+
     # Timestamps
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
@@ -1169,6 +1657,30 @@ class TradingBotConfig(models.Model):
     def __str__(self):
         return f"{self.user.email} - {self.name} ({'Active' if self.is_active else 'Inactive'})"
 
+    def get_total_equity(self) -> Decimal:
+        """
+        Calculate total bot equity (cash + portfolio value).
+
+        Returns:
+            Total equity as Decimal
+        """
+        portfolio_value = Decimal("0.00")
+        for holding in self.bot_portfolio_holdings.all():
+            portfolio_value += holding.current_value
+        return self.cash_balance + portfolio_value
+
+    def get_portfolio_value(self) -> Decimal:
+        """
+        Calculate current portfolio value.
+
+        Returns:
+            Total portfolio value as Decimal
+        """
+        portfolio_value = Decimal("0.00")
+        for holding in self.bot_portfolio_holdings.all():
+            portfolio_value += holding.current_value
+        return portfolio_value
+
     def clean(self):
         """Validate bot configuration."""
         from django.core.exceptions import ValidationError
@@ -1183,6 +1695,19 @@ class TradingBotConfig(models.Model):
             )
         if not self.assigned_stocks.exists():
             raise ValidationError(_("At least one stock must be assigned to the bot"))
+        # Validate persistence configuration
+        if self.signal_persistence_type and not self.signal_persistence_value:
+            raise ValidationError(
+                _(
+                    "signal_persistence_value is required when signal_persistence_type is set"
+                )
+            )
+        if self.signal_persistence_value and not self.signal_persistence_type:
+            raise ValidationError(
+                _(
+                    "signal_persistence_type is required when signal_persistence_value is set"
+                )
+            )
 
 
 class TradingBotExecution(models.Model):
@@ -1234,6 +1759,25 @@ class TradingBotExecution(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text=_("Calculated risk score (0-100)"),
+    )
+    # Signal persistence tracking
+    persistence_met = models.BooleanField(
+        _("persistence met"),
+        null=True,
+        blank=True,
+        help_text=_("Whether signal persistence criteria was met before execution"),
+    )
+    persistence_count = models.IntegerField(
+        _("persistence count"),
+        null=True,
+        blank=True,
+        help_text=_("Number of ticks or minutes that matched before execution"),
+    )
+    persistence_signal_history = models.JSONField(
+        _("persistence signal history"),
+        default=list,
+        blank=True,
+        help_text=_("History of signals during persistence period"),
     )
     executed_order = models.ForeignKey(
         Order,
@@ -1572,5 +2116,5 @@ class TradingBotSettings(models.Model):
         """
         Get or create the singleton instance.
         """
-        obj, created = cls.objects.get_or_create(pk=1)
+        obj, _created = cls.objects.get_or_create(pk=1)
         return obj

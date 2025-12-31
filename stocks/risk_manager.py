@@ -4,11 +4,12 @@ Comprehensive risk management including position sizing, limits, and validation.
 """
 
 import logging
+import math
 from decimal import Decimal
 
 from django.utils import timezone
 
-from .models import Order, Portfolio, TradingBotConfig
+from .models import BotPortfolio, Order, TradingBotConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,18 @@ class RiskManager:
         Returns:
             Tuple of (is_valid, reason)
         """
-        # Check if stock is in assigned stocks
-        if stock not in self.bot_config.assigned_stocks.all():
-            return False, f"Stock {stock.symbol} is not in bot's assigned stocks"
+        # Check if stock is in assigned stocks OR in bot's portfolio
+        # (bots can sell positions even if not in assigned_stocks)
+        is_assigned = stock in self.bot_config.assigned_stocks.all()
+        has_position = BotPortfolio.objects.filter(
+            bot_config=self.bot_config, stock=stock, quantity__gt=0
+        ).exists()
+
+        if not is_assigned and not has_position:
+            return (
+                False,
+                f"Stock {stock.symbol} is not in bot's assigned stocks or portfolio",
+            )
 
         # Check daily trade limits
         if not self._check_daily_trade_limit():
@@ -65,9 +75,10 @@ class RiskManager:
 
     def calculate_position_size(
         self, stock, price: Decimal, stop_loss_price: Decimal | None = None
-    ) -> Decimal:
+    ) -> int:
         """
         Calculate optimal position size based on risk management rules.
+        Returns integer quantity (no fractional shares).
 
         Args:
             stock: Stock instance
@@ -75,43 +86,54 @@ class RiskManager:
             stop_loss_price: Stop loss price (optional)
 
         Returns:
-            Optimal position size (quantity)
+            Optimal position size (quantity as integer)
         """
-        # Get available budget
+        # Get available budget (bot cash balance)
         available_budget = self._get_available_budget()
 
         if available_budget <= 0:
-            return Decimal("0.00")
+            return 0
+
+        # Calculate maximum affordable quantity based on cash
+        max_affordable_quantity = math.floor(available_budget / price)
+        if max_affordable_quantity <= 0:
+            return 0
 
         # Calculate risk per trade
         risk_per_trade = self.bot_config.risk_per_trade / Decimal("100.00")
         risk_amount = available_budget * risk_per_trade
 
-        # Calculate position size based on stop loss
+        # Calculate risk-based position size
         if stop_loss_price and stop_loss_price > 0:
             stop_loss_percent = abs((price - stop_loss_price) / price)
             if stop_loss_percent > 0:
                 position_value = risk_amount / stop_loss_percent
-                quantity = position_value / price
+                risk_quantity = position_value / price
             else:
                 # Fallback to percentage of budget
                 max_position_percent = Decimal("0.10")  # 10% max per position
                 position_value = available_budget * max_position_percent
-                quantity = position_value / price
+                risk_quantity = position_value / price
         else:
             # Use default risk percentage
             max_position_percent = Decimal("0.10")  # 10% max per position
             position_value = available_budget * max_position_percent
-            quantity = position_value / price
+            risk_quantity = position_value / price
+
+        # Round down to integer
+        risk_quantity_int = math.floor(risk_quantity)
 
         # Apply max position size limit
         if self.bot_config.max_position_size:
-            quantity = min(quantity, self.bot_config.max_position_size)
+            max_position_int = int(self.bot_config.max_position_size)
+            risk_quantity_int = min(risk_quantity_int, max_position_int)
 
-        # Ensure quantity is positive and reasonable
-        quantity = max(Decimal("0.0001"), min(quantity, available_budget / price))
+        # CRITICAL: Take minimum of risk-based size and max affordable
+        # This ensures we never exceed available cash
+        final_quantity = min(risk_quantity_int, max_affordable_quantity)
 
-        return quantity.quantize(Decimal("0.0001"))
+        # Ensure quantity is positive
+        return max(0, final_quantity)
 
     def calculate_risk_score(self, stock, price: Decimal, quantity: Decimal) -> Decimal:
         """
@@ -166,14 +188,15 @@ class RiskManager:
                 stop_loss_price = price * (Decimal("1.00") - stop_loss_pct)
             quantity = self.calculate_position_size(stock, price, stop_loss_price)
 
-        # Check budget
-        total_cost = quantity * price
-        available_budget = self._get_available_budget()
+        # Check bot cash balance (for buy orders, we only use cash, not portfolio value)
+        quantity_int = int(quantity) if quantity else 0
+        total_cost = Decimal(str(quantity_int)) * price
+        cash_balance = self.bot_config.cash_balance or Decimal("0.00")
 
-        if total_cost > available_budget:
+        if total_cost > cash_balance:
             return (
                 False,
-                f"Insufficient budget. Need {total_cost}, have {available_budget}",
+                f"Insufficient bot cash. Need {total_cost}, have {cash_balance}",
             )
 
         # Check max position size
@@ -206,12 +229,11 @@ class RiskManager:
         if total_quantity <= 0:
             return False, f"No position in {stock.symbol} to sell"
 
-        # Check quantity
-        if quantity is None:
-            quantity = total_quantity  # Sell all
+        # Check quantity (convert to int for comparison)
+        quantity_int = total_quantity if quantity is None else int(quantity)
 
-        if quantity > total_quantity:
-            return False, f"Cannot sell {quantity}, only have {total_quantity}"
+        if quantity_int > total_quantity:
+            return False, f"Cannot sell {quantity_int}, only have {total_quantity}"
 
         return True, "Sell order validated"
 
@@ -249,45 +271,26 @@ class RiskManager:
         return total_loss >= -self.bot_config.max_daily_loss
 
     def _get_available_budget(self) -> Decimal:
-        """Get available budget for trading."""
-        if self.bot_config.budget_type == "cash":
-            # For cash budget, track separately or use a dedicated field
-            # For now, return the budget_cash value
-            return self.bot_config.budget_cash or Decimal("0.00")
-        # For portfolio budget, calculate current value of assigned positions
-        portfolio_positions = self.bot_config.budget_portfolio.all()
-        total_value = Decimal("0.00")
-        for pos in portfolio_positions:
-            total_value += pos.current_value
-        return total_value
+        """Get available budget for trading (bot cash balance + current portfolio value)."""
+        # Always use bot's cash balance
+        cash_balance = self.bot_config.cash_balance or Decimal("0.00")
 
-    def _get_bot_positions(self, stock) -> list[Portfolio]:
-        """Get bot's positions in a stock."""
-        # Get positions created by bot orders
-        bot_orders = Order.objects.filter(
+        # Add current portfolio value
+        portfolio_value = Decimal("0.00")
+        for holding in self.bot_config.bot_portfolio_holdings.all():
+            portfolio_value += holding.current_value
+
+        return cash_balance + portfolio_value
+
+    def _get_bot_positions(self, stock) -> list[BotPortfolio]:
+        """Get bot's positions in a stock from BotPortfolio."""
+        # Query BotPortfolio directly
+        bot_positions = BotPortfolio.objects.filter(
             bot_config=self.bot_config,
             stock=stock,
-            status="done",
-            transaction_type="buy",
+            quantity__gt=0,
         )
-
-        positions = []
-        for order in bot_orders:
-            try:
-                portfolio_entry = Portfolio.objects.get(
-                    user=self.user, stock=stock, order=order
-                )
-                if portfolio_entry.quantity > 0:
-                    positions.append(portfolio_entry)
-            except Portfolio.DoesNotExist:
-                pass
-
-        # Also include portfolio positions assigned to bot
-        if self.bot_config.budget_type == "portfolio":
-            assigned_positions = self.bot_config.budget_portfolio.filter(stock=stock)
-            positions.extend(assigned_positions)
-
-        return positions
+        return list(bot_positions)
 
     def _calculate_volatility_score(self, stock) -> Decimal:
         """Calculate volatility score (0-1)."""

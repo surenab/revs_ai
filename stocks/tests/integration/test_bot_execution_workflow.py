@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 from django.test import TestCase
+from django.utils import timezone
 
 pytestmark = pytest.mark.integration
 

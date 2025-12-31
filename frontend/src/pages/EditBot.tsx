@@ -85,6 +85,8 @@ const EditBot: React.FC = () => {
     risk_score_threshold: "80",
     risk_adjustment_factor: "1.0",
     risk_based_position_scaling: false,
+    signal_persistence_type: null as "tick_count" | "time_duration" | null,
+    signal_persistence_value: "",
   });
 
   // Store raw JSON strings to allow typing invalid JSON while editing
@@ -177,6 +179,9 @@ const EditBot: React.FC = () => {
           botData.risk_adjustment_factor?.toString() || "1.0",
         risk_based_position_scaling:
           botData.risk_based_position_scaling ?? false,
+        signal_persistence_type: botData.signal_persistence_type || null,
+        signal_persistence_value:
+          botData.signal_persistence_value?.toString() || "",
       });
       // Initialize JSON fields with formatted strings
       setJsonFields({
@@ -294,12 +299,43 @@ const EditBot: React.FC = () => {
           botForm.risk_based_position_scaling || false,
       };
 
-      if (botForm.budget_type === "cash") {
-        updateData.budget_cash = botForm.budget_cash
-          ? parseFloat(botForm.budget_cash)
-          : undefined;
+      // Validate that at least one budget option is provided
+      const hasCash =
+        botForm.budget_cash && parseFloat(botForm.budget_cash) > 0;
+      const hasPortfolio = botForm.budget_portfolio.length > 0;
+
+      if (!hasCash && !hasPortfolio) {
+        toast.error(
+          "Please provide at least one: cash budget or portfolio positions"
+        );
+        return;
+      }
+
+      // Determine budget_type based on what's provided
+      let budgetType: "cash" | "portfolio" = botForm.budget_type;
+      if (hasPortfolio && !hasCash) {
+        budgetType = "portfolio";
+      } else if (hasCash && hasPortfolio) {
+        // If both are provided, use "cash" as the primary type (backend handles both)
+        budgetType = "cash";
+      } else if (hasCash) {
+        budgetType = "cash";
+      }
+
+      updateData.budget_type = budgetType;
+
+      // Add cash budget if provided
+      if (hasCash) {
+        updateData.budget_cash = parseFloat(botForm.budget_cash);
       } else {
+        updateData.budget_cash = undefined;
+      }
+
+      // Add portfolio positions if provided
+      if (hasPortfolio) {
         updateData.budget_portfolio = botForm.budget_portfolio;
+      } else {
+        updateData.budget_portfolio = [];
       }
 
       if (botForm.max_position_size) {
@@ -328,6 +364,18 @@ const EditBot: React.FC = () => {
         updateData.risk_adjustment_factor = parseFloat(
           botForm.risk_adjustment_factor
         );
+      }
+      updateData.risk_based_position_scaling =
+        botForm.risk_based_position_scaling;
+      // Signal persistence
+      updateData.signal_persistence_type = botForm.signal_persistence_type;
+      if (botForm.signal_persistence_value) {
+        updateData.signal_persistence_value = parseInt(
+          botForm.signal_persistence_value,
+          10
+        );
+      } else {
+        updateData.signal_persistence_value = null;
       }
 
       await botAPI.updateBot(id, updateData);
@@ -470,70 +518,52 @@ const EditBot: React.FC = () => {
                   tooltip="Number of days to look back for indicators and patterns calculation"
                 />
 
+                {/* Initial Budget Configuration */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                    Budget Type *
-                    <InfoTooltip tooltip={TOOLTIPS.budgetType} />
+                    Initial Budget Configuration *
+                    <InfoTooltip tooltip="You can set both cash and portfolio, or just one of them. At least one is required." />
                   </label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        value="cash"
-                        checked={botForm.budget_type === "cash"}
-                        onChange={(e) =>
-                          setBotForm({
-                            ...botForm,
-                            budget_type: e.target.value as "cash" | "portfolio",
-                          })
-                        }
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <Wallet className="w-4 h-4 text-gray-400" />
-                      <span className="text-white">Cash Budget</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        value="portfolio"
-                        checked={botForm.budget_type === "portfolio"}
-                        onChange={(e) =>
-                          setBotForm({
-                            ...botForm,
-                            budget_type: e.target.value as "cash" | "portfolio",
-                          })
-                        }
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <TrendingUp className="w-4 h-4 text-gray-400" />
-                      <span className="text-white">Portfolio Budget</span>
-                    </label>
-                  </div>
-                </div>
+                  <p className="text-xs text-gray-400 mb-3">
+                    You can set both cash and portfolio, or just one of them. At
+                    least one is required.
+                  </p>
+                  {!botForm.budget_cash &&
+                    botForm.budget_portfolio.length === 0 && (
+                      <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                        <p className="text-xs text-yellow-400">
+                          ⚠️ Please provide at least one: cash budget or
+                          portfolio positions
+                        </p>
+                      </div>
+                    )}
 
-                {botForm.budget_type === "cash" ? (
-                  <div>
+                  {/* Cash Budget */}
+                  <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                      Cash Budget ($) *
+                      Initial Cash Budget ($)
                       <InfoTooltip tooltip={TOOLTIPS.budgetCash} />
                     </label>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
-                      required
                       value={botForm.budget_cash}
                       onChange={(e) =>
                         setBotForm({ ...botForm, budget_cash: e.target.value })
                       }
                       className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                      placeholder="10000.00"
+                      placeholder="10000.00 (optional)"
                     />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Starting cash amount for the bot to trade with
+                    </p>
                   </div>
-                ) : (
+
+                  {/* Portfolio Selection */}
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                      Select Portfolio Positions *
+                      Initial Portfolio Positions
                       <InfoTooltip tooltip={TOOLTIPS.budgetPortfolio} />
                     </label>
                     {availablePortfolio.length === 0 ? (
@@ -584,8 +614,11 @@ const EditBot: React.FC = () => {
                         ))}
                       </div>
                     )}
+                    <p className="text-xs text-gray-400 mt-1">
+                      Select existing portfolio positions to assign to the bot
+                    </p>
                   </div>
-                )}
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
@@ -661,9 +694,7 @@ const EditBot: React.FC = () => {
               defaultOpen={false}
               isComplete={
                 !!botForm.risk_per_trade &&
-                (botForm.budget_type === "cash"
-                  ? !!botForm.budget_cash
-                  : botForm.budget_portfolio.length > 0)
+                (!!botForm.budget_cash || botForm.budget_portfolio.length > 0)
               }
             >
               <div className="space-y-4">
@@ -1079,6 +1110,82 @@ const EditBot: React.FC = () => {
                     <InfoTooltip tooltip={TOOLTIPS.riskBasedPositionScaling} />
                   </div>
                 </div>
+              </div>
+            </SectionCard>
+
+            {/* Signal Persistence Section */}
+            <SectionCard
+              title="Signal Persistence"
+              icon={Activity}
+              defaultOpen={false}
+              isComplete={
+                !botForm.signal_persistence_type ||
+                (botForm.signal_persistence_type &&
+                  botForm.signal_persistence_value)
+              }
+            >
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">
+                    Persistence Type
+                    <InfoTooltip tooltip="Choose how to confirm signals before execution: Tick Count (N consecutive ticks) or Time Duration (M minutes). Disabled means immediate execution." />
+                  </label>
+                  <select
+                    value={botForm.signal_persistence_type ?? ""}
+                    onChange={(e) => {
+                      const newType =
+                        e.target.value === ""
+                          ? null
+                          : (e.target.value as "tick_count" | "time_duration");
+                      setBotForm({
+                        ...botForm,
+                        signal_persistence_type: newType,
+                        signal_persistence_value:
+                          e.target.value === ""
+                            ? ""
+                            : botForm.signal_persistence_value,
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Disabled (Immediate Execution)</option>
+                    <option value="tick_count">Tick Count (N ticks)</option>
+                    <option value="time_duration">
+                      Time Duration (M minutes)
+                    </option>
+                  </select>
+                </div>
+
+                {botForm.signal_persistence_type && (
+                  <ThresholdInput
+                    label={
+                      botForm.signal_persistence_type === "tick_count"
+                        ? "Number of Ticks (N)"
+                        : "Duration in Minutes (M)"
+                    }
+                    icon={Activity}
+                    value={botForm.signal_persistence_value}
+                    onChange={(value) =>
+                      setBotForm({
+                        ...botForm,
+                        signal_persistence_value: String(value),
+                      })
+                    }
+                    type="number"
+                    min="1"
+                    max={
+                      botForm.signal_persistence_type === "tick_count"
+                        ? "100"
+                        : "1440"
+                    }
+                    step="1"
+                    tooltip={
+                      botForm.signal_persistence_type === "tick_count"
+                        ? "Number of consecutive ticks that must show the same signal before execution"
+                        : "Number of minutes the signal must persist before execution"
+                    }
+                  />
+                )}
               </div>
             </SectionCard>
 
