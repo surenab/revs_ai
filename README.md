@@ -26,9 +26,11 @@ This is a full-stack application featuring a React TypeScript frontend with a Dj
 
 - **Stock Trading Platform** - Buy/sell orders, portfolio management, real-time data
 - **Stock Analysis** - Technical indicators, chart patterns, historical data
+- **Automated Trading Bots** - Create and manage trading bots with isolated portfolios, cash management, and signal persistence
 - **User Management** - Authentication, profiles, settings, support requests
 - **Order Management** - Market and target orders with automatic execution
 - **Portfolio Tracking** - Real-time portfolio value, gain/loss tracking
+- **Bot Simulation System** - Multi-bot grid search simulations with comprehensive parameter testing
 
 ## 🎨 Frontend Features
 
@@ -38,12 +40,16 @@ This is a full-stack application featuring a React TypeScript frontend with a Dj
 - **Complete Authentication System** (Login/Register/Profile Management)
 - **Portfolio Management** - View holdings, place orders, track performance
 - **Order Management** - Create, execute, and track buy/sell orders
+- **Trading Bots** - Create, configure, and manage automated trading bots with isolated portfolios
+- **Bot Portfolio Management** - Track bot-specific holdings with HIFO sell logic and lot tracking
+- **Signal Persistence** - Configure bots to require signal confirmation before execution
 - **Settings Page** - Comprehensive trading preferences and platform settings
 - **Contact Support** - Submit support requests with error tracking
 - **PDF Export** - Export portfolio and orders data as PDFs
 - **Responsive Design** optimized for all devices
 - **Smooth Animations** with Framer Motion
 - **Form Validation** with React Hook Form and Zod
+- **Pagination** - Efficient handling of large datasets with server-side pagination
 
 ## 🔧 Backend Features
 
@@ -52,6 +58,11 @@ This is a full-stack application featuring a React TypeScript frontend with a Dj
 - **Stock Data Management** - Historical prices, intraday data, real-time quotes
 - **Order Execution System** - Automatic order execution with error handling
 - **Portfolio Management** - Cash balance, holdings, weighted average pricing
+- **Trading Bot Engine** - Automated trading with ML models, indicators, patterns, and signal aggregation
+- **Bot Portfolio System** - Isolated bot portfolios with HIFO sell logic and lot tracking
+- **Risk Management** - Position sizing, cash alignment, and risk-based trade validation
+- **Signal Persistence** - Configurable signal confirmation before trade execution
+- **Bot Simulation Framework** - Multi-bot grid search with parameter optimization
 - **Support Request System** - User support ticket management
 - **Multi-Environment Docker Setup** (Development, Staging, Production, Testing)
 - **Modern Code Quality Tools** (Ruff for linting and formatting)
@@ -91,6 +102,18 @@ This is a full-stack application featuring a React TypeScript frontend with a Dj
 ### Profile Page
 ![Profile](docs/screenshots/profile.png)
 *The profile page lets you manage your personal account information. Update your personal details including name, email, and contact information. Upload and manage your profile avatar with image cropping and preview. Change your password and manage security settings. View your account statistics including registration date, total trades, and account activity. Access account verification status and subscription information. This page ensures you have full control over your account settings and personal information.*
+
+### Trading Bots Page
+![Trading Bots](docs/screenshots/trading-bots.png)
+*The trading bots page is your command center for automated trading. Create, manage, and monitor multiple trading bots with isolated portfolios and cash management. Each bot operates independently with its own cash balance and stock holdings. The page features pagination to handle large numbers of bots efficiently. View bot status (Active/Inactive), risk metrics, total equity, and quick actions like activate/deactivate, execute, and view details. The responsive grid layout displays all your bots with key metrics at a glance. Click on any bot to view comprehensive details including portfolio holdings, execution history, performance metrics, and signal analysis.*
+
+### Bot Details & Portfolio Management
+![Bot Portfolio](docs/screenshots/bot-portfolio.png)
+*The bot details page provides comprehensive insights into each trading bot's performance and configuration. The Portfolio tab shows the bot's isolated holdings with detailed lot tracking using HIFO (Highest-In-First-Out) sell logic. View cash balance, portfolio value, total equity, and gain/loss calculations. Each stock holding displays individual purchase lots with purchase prices, dates, and remaining quantities. The Overview tab shows bot configuration including signal persistence settings, risk parameters, and assigned stocks. The Executions, Performance, Signals, and Orders tabs provide detailed analytics for bot activity. All tabs are accessible from both the modal quick view and the full details page for consistent user experience.*
+
+### Bot Creation & Configuration
+![Bot Creation](docs/screenshots/bot-creation.png)
+*The bot creation form allows you to configure sophisticated trading bots with comprehensive settings. Assign both cash and portfolio positions simultaneously to give your bot starting capital. Configure signal persistence to require signals to persist for a specified number of ticks or time duration before execution. Set risk management parameters including risk per trade, stop loss, take profit, and position sizing limits. Select from a wide range of technical indicators and chart patterns. Configure ML model weights, signal aggregation methods, and buy/sell rules. The form includes real-time validation to ensure at least cash or portfolio is assigned, and provides helpful tooltips explaining each configuration option.*
 
 ## 🛠️ Tech Stack
 
