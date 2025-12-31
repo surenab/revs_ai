@@ -71,7 +71,7 @@ def calculate_sma(
     return result
 
 
-def calculate_ema(  # noqa: PLR0912
+def calculate_ema(
     data: list[dict], period: int, price_field: str = "close_price"
 ) -> list[float | None]:
     """
@@ -167,7 +167,7 @@ def calculate_wma(
     return result
 
 
-def calculate_rsi(  # noqa: PLR0912
+def calculate_rsi(
     data: list[dict], period: int = 14, price_field: str = "close_price"
 ) -> list[float | None]:
     """
@@ -624,7 +624,7 @@ def calculate_williams_r(data: list[dict], period: int = 14) -> list[float | Non
     return result
 
 
-def calculate_adx(data: list[dict], period: int = 14) -> dict[str, list[float | None]]:  # noqa: PLR0912, PLR0915
+def calculate_adx(data: list[dict], period: int = 14) -> dict[str, list[float | None]]:
     """
     Calculate Average Directional Index (ADX) with +DI and -DI.
 
@@ -756,7 +756,7 @@ def calculate_adx(data: list[dict], period: int = 14) -> dict[str, list[float | 
     }
 
 
-def calculate_parabolic_sar(  # noqa: PLR0912
+def calculate_parabolic_sar(
     data: list[dict], acceleration: float = 0.02, maximum: float = 0.20
 ) -> list[float | None]:
     """
@@ -903,7 +903,7 @@ def calculate_pivot_points(data: list[dict]) -> dict[str, list[float | None]]:
     return result
 
 
-def calculate_ichimoku(  # noqa: PLR0912, PLR0915
+def calculate_ichimoku(
     data: list[dict],
     tenkan_period: int = 9,
     kijun_period: int = 26,

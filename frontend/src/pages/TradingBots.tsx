@@ -215,7 +215,11 @@ const TradingBots: React.FC = () => {
         botsData = response.data;
         paginationData.totalCount = botsData.length;
         paginationData.totalPages = 1;
-      } else if (response.data && typeof response.data === "object" && "results" in response.data) {
+      } else if (
+        response.data &&
+        typeof response.data === "object" &&
+        "results" in response.data
+      ) {
         // Paginated response
         const paginatedData = response.data as {
           count: number;
@@ -225,7 +229,9 @@ const TradingBots: React.FC = () => {
         };
         botsData = paginatedData.results || [];
         paginationData.totalCount = paginatedData.count || 0;
-        paginationData.totalPages = Math.ceil(paginationData.totalCount / pagination.pageSize);
+        paginationData.totalPages = Math.ceil(
+          paginationData.totalCount / pagination.pageSize
+        );
         paginationData.hasNext = paginatedData.next !== null;
         paginationData.hasPrevious = paginatedData.previous !== null;
       }
@@ -632,8 +638,8 @@ const TradingBots: React.FC = () => {
       risk_score_threshold: "80",
       risk_adjustment_factor: "1.0",
       risk_based_position_scaling: false,
-    signal_persistence_type: null,
-    signal_persistence_value: "",
+      signal_persistence_type: null,
+      signal_persistence_value: "",
     });
     setJsonFields({
       enabled_indicators: "{}",
@@ -964,7 +970,8 @@ const TradingBots: React.FC = () => {
           <div className="flex items-center justify-between mt-8 bg-gray-800/50 rounded-lg border border-gray-700/50 p-4">
             <div className="flex items-center gap-2 text-sm text-gray-400">
               <span>
-                Showing {(pagination.currentPage - 1) * pagination.pageSize + 1} to{" "}
+                Showing {(pagination.currentPage - 1) * pagination.pageSize + 1}{" "}
+                to{" "}
                 {Math.min(
                   pagination.currentPage * pagination.pageSize,
                   pagination.totalCount
@@ -985,32 +992,38 @@ const TradingBots: React.FC = () => {
                 Previous
               </button>
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                  let pageNum: number;
-                  if (pagination.totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (pagination.currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (pagination.currentPage >= pagination.totalPages - 2) {
-                    pageNum = pagination.totalPages - 4 + i;
-                  } else {
-                    pageNum = pagination.currentPage - 2 + i;
+                {Array.from(
+                  { length: Math.min(5, pagination.totalPages) },
+                  (_, i) => {
+                    let pageNum: number;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (
+                      pagination.currentPage >=
+                      pagination.totalPages - 2
+                    ) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.currentPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        disabled={isLoading}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          pageNum === pagination.currentPage
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-700 hover:bg-gray-600 text-white"
+                        } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
                   }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => handlePageChange(pageNum)}
-                      disabled={isLoading}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                        pageNum === pagination.currentPage
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 hover:bg-gray-600 text-white"
-                      } ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
+                )}
               </div>
               <button
                 onClick={() => handlePageChange(pagination.currentPage + 1)}

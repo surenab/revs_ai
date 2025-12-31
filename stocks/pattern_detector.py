@@ -10,7 +10,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def to_number(value: Any) -> float | None:  # noqa: PLR0911
+def to_number(value: Any) -> float | None:
     """Convert a value to a number."""
     if value is None:
         return None
@@ -1878,8 +1878,8 @@ def detect_all_patterns(
                     logger.debug(
                         f"Pattern {pattern_id}: detected {len(matches)} matches"
                     )
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Error detecting pattern {pattern_id}: {e}")
+            except Exception as e:
+                logger.exception(f"Error detecting pattern {pattern_id}: {e}")
         else:
             logger.warning(
                 f"Pattern detector not found for pattern_id: {pattern_id}. "

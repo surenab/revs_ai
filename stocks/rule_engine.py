@@ -199,9 +199,7 @@ class RuleEvaluator:
         logger.debug("Time condition evaluation not fully implemented")
         return True
 
-    def _get_indicator_value(  # noqa: PLR0912
-        self, indicator_name: str, period: int
-    ) -> float | None:
+    def _get_indicator_value(self, indicator_name: str, period: int) -> float | None:
         """Get the latest value for an indicator."""
         # Check if already calculated
         key = f"{indicator_name}_{period}"
@@ -247,9 +245,7 @@ class RuleEvaluator:
 
         return None
 
-    def _compare_values(  # noqa: PLR0911
-        self, left: float, operator: str, right: float
-    ) -> bool:
+    def _compare_values(self, left: float, operator: str, right: float) -> bool:
         """Compare two values using the given operator."""
         try:
             if operator == ">":

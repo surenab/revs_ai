@@ -114,7 +114,7 @@ class AlphaVantageService:
                 result.append(
                     {
                         "date": timezone.make_aware(
-                            datetime.strptime(date_str, "%Y-%m-%d")  # noqa: DTZ007
+                            datetime.strptime(date_str, "%Y-%m-%d").astimezone()
                         ).date(),
                         "open_price": Decimal(values["1. open"]),
                         "high_price": Decimal(values["2. high"]),
@@ -152,7 +152,7 @@ class AlphaVantageService:
             try:
                 # Parse timestamp
                 timestamp = timezone.make_aware(
-                    datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007
+                    datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").astimezone()
                 )
 
                 result.append(
@@ -526,7 +526,7 @@ class YahooFinanceService:
 
         return results
 
-    def get_multiple_current_quotes(self, symbols: list[str]) -> dict[str, dict | None]:  # noqa: PLR0912, PLR0915
+    def get_multiple_current_quotes(self, symbols: list[str]) -> dict[str, dict | None]:
         """
         Get current quotes with bid/ask data for multiple symbols efficiently.
         Optimized for tick data recording.

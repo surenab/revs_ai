@@ -372,7 +372,7 @@ def convert_rsi_to_signal(
     }
 
 
-def convert_macd_to_signal(  # noqa: PLR0911
+def convert_macd_to_signal(
     macd_value: float | None,
     signal_value: float | None,
     histogram: float | None,
@@ -1597,7 +1597,7 @@ def convert_fractal_to_signal(
     }
 
 
-def convert_indicator_to_signal(  # noqa: PLR0911, PLR0912, PLR0915
+def convert_indicator_to_signal(  # noqa: PLR0911, PLR0912
     indicator_key: str,
     indicator_value: Any,
     bot_config,
@@ -1665,7 +1665,6 @@ def convert_indicator_to_signal(  # noqa: PLR0911, PLR0912, PLR0915
         thresholds = get_indicator_thresholds(bot_config, "cci")
         return convert_cci_to_signal(latest_value, thresholds)
 
-    # Williams %R  # noqa: ERA001
     if "williams" in key_lower or "_wr" in key_lower or "wr_" in key_lower:
         thresholds = get_indicator_thresholds(bot_config, "williams_r")
         return convert_williams_r_to_signal(latest_value, thresholds)
