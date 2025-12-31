@@ -278,13 +278,14 @@ class TestRiskManager(TestCase):
     def test_calculate_position_size_zero_budget(self):
         """Test position sizing with zero budget."""
         self.bot_config.budget_cash = Decimal("0.00")
+        self.bot_config.cash_balance = Decimal("0.00")
         self.bot_config.save()
 
         size = self.risk_manager.calculate_position_size(
             self.stock, Decimal("100.00"), None
         )
 
-        assert size == Decimal("0.00")
+        assert size == 0
 
     def test_calculate_risk_score_zero_quantity(self):
         """Test risk score calculation with zero quantity."""

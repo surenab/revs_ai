@@ -698,15 +698,16 @@ class Order(models.Model):
                     )
                     return False  # No shares to sell
 
-            # For buy orders, check if bot has enough cash
+            # For buy orders, check if bot has enough cash for at least 1 share
+            # (execute() will reduce quantity if needed)
             if self.transaction_type == "buy":
-                quantity_int = int(self.quantity)
-                total_cost = Decimal(str(quantity_int)) * latest_price.close_price
-                if bot_config.cash_balance < total_cost:
+                # Check if bot has enough cash for at least 1 share
+                min_cost = latest_price.close_price
+                if bot_config.cash_balance < min_cost:
                     logger.warning(
-                        f"Order {self.id} cannot be executed - insufficient bot cash"
+                        f"Order {self.id} cannot be executed - insufficient bot cash (need at least {min_cost} for 1 share)"
                     )
-                    return False  # Insufficient funds
+                    return False  # Insufficient funds for even 1 share
 
         else:
             # User order validation (existing logic)
